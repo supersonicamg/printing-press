@@ -274,14 +274,23 @@ const EstimateList = () => {
         </Col>
         <Col>
           {hasPermission('canCreateEstimate') && (
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              onClick={() => router.push('/estimates/create')}
-              size={isMobile ? 'middle' : 'large'}
-            >
-              {isMobile ? 'New' : 'Create Estimate'}
-            </Button>
+            <Space wrap>
+              <Button
+                icon={<PlusOutlined />}
+                onClick={() => router.push('/estimates/create')}
+                size={isMobile ? 'middle' : 'large'}
+              >
+                {isMobile ? 'Old' : 'Old Form'}
+              </Button>
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={() => router.push('/estimates/new')}
+                size={isMobile ? 'middle' : 'large'}
+              >
+                {isMobile ? 'New' : 'New Estimate'}
+              </Button>
+            </Space>
           )}
         </Col>
       </Row>

@@ -1,1702 +1,871 @@
 'use client';
-import React, { useState, useEffect } from 'react';
-import {
-  Card, Form, Input, Select, InputNumber, DatePicker, Row, Col, Typography, Space,
-  Checkbox, Divider, message, Button, Collapse, Tag, Modal, Alert, Grid, Tooltip, Badge
-} from 'antd';
-import {
-  SaveOutlined, FileTextOutlined, UserOutlined, PlusOutlined, SearchOutlined,
-  ScissorOutlined, PrinterOutlined, ToolOutlined, CalculatorOutlined, BulbOutlined,
-  PhoneOutlined, InfoCircleOutlined, CheckCircleOutlined, ReloadOutlined, MailOutlined
-} from '@ant-design/icons';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import {
+  ArrowLeft, Save, Plus, Search, ChevronDown, ChevronUp,
+  Phone, Mail, Check, FileText, Layers, Printer, Scissors,
+  Sparkles, RotateCcw, TrendingUp
+} from 'lucide-react';
 import { useEstimate } from '../../context/EstimateContext';
 import { useMasterData } from '../../context/MasterDataContext';
 import { formatCurrency } from '../../utils/calculations';
-import { getRecommendationsFromDimensions, STANDARD_SIZES, UNIT_CONVERSIONS, convertToMm, DEFAULT_MARGINS } from '../../utils/paperSizeOptimizer';
-import PaperLayoutVisualizer from '../../components/PaperLayoutVisualizer';
+import { STANDARD_SIZES, DEFAULT_MARGINS } from '../../utils/paperSizeOptimizer';
+import { PaperSizeCalculatorModal } from '../../components/PaperSizeCalculatorModal';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Separator } from '@/components/ui/separator';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { cn } from '@/lib/utils';
 
-const { Title, Text } = Typography;
-const { Panel } = Collapse;
-const { useBreakpoint } = Grid;
+/* ─── NumInput: styled number input ─── */
+const NumInput = ({ value, onChange, min = 0, step = 1, placeholder, className, ...props }) => (
+  <input
+    type="number" min={min} step={step} value={value ?? ''}
+    placeholder={placeholder}
+    onChange={e => onChange(e.target.value === '' ? '' : Number(e.target.value))}
+    className={cn(
+      'flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm',
+      'ring-offset-background placeholder:text-muted-foreground',
+      'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
+      '[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none',
+      className,
+    )}
+    {...props}
+  />
+);
 
-const CreateEstimate = () => {
-  const router = useRouter();
-  const screens = useBreakpoint();
-  const isMobile = !screens.md;
-  const [form] = Form.useForm();
-  const { saveEstimate, estimates, generateEstimateId } = useEstimate();
-  const { 
-    paperTypes, machines, productTypes, gsmOptions, printTypes,
-    addProductType, addGsmOption, addPrintType, addPaperType 
-  } = useMasterData();
-  
-  // Auto-generate estimate number
-  const [estimateNo, setEstimateNo] = useState('');
-  
-  useEffect(() => {
-    const newId = generateEstimateId ? generateEstimateId() : `EST-${Date.now()}`;
-    setEstimateNo(newId);
-  }, []);
-  
-  // Customer state - persist across sessions
-  const [customerList, setCustomerList] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('printmaster_customers');
-      if (saved) {
-        return JSON.parse(saved);
-      }
-    }
-    return [
-      { id: 1, name: 'Acme Corporation', phone: '+91 98765 43210', email: 'john@acme.com' },
-      { id: 2, name: 'TechStart India', phone: '+91 87654 32109', email: 'priya@techstart.in' },
-      { id: 3, name: 'Global Traders', phone: '+91 76543 21098', email: 'ahmed@globaltraders.com' }
-    ];
-  });
-  
-  const [showAddCustomer, setShowAddCustomer] = useState(false);
-  const [newCustomerName, setNewCustomerName] = useState('');
-  const [newCustomerPhone, setNewCustomerPhone] = useState('');
-  const [newCustomerEmail, setNewCustomerEmail] = useState('');
-  const [customerSearch, setCustomerSearch] = useState('');
-  
-  // Unit selection state
-  const [sizeUnit, setSizeUnit] = useState('inch');
-  
-  // Paper size recommendation
-  const [sizeRecommendations, setSizeRecommendations] = useState(null);
-  const [showCalculator, setShowCalculator] = useState(false);
-  const [calcWidth, setCalcWidth] = useState('');
-  const [calcHeight, setCalcHeight] = useState('');
-  const [calcUnit, setCalcUnit] = useState('inch');
-  const [calcResults, setCalcResults] = useState(null);
-  const [selectedCalcRec, setSelectedCalcRec] = useState(null);
-  
-  // Add new modals
-  const [showAddProductType, setShowAddProductType] = useState(false);
-  const [newProductType, setNewProductType] = useState('');
-  const [showAddPaperType, setShowAddPaperType] = useState(false);
-  const [newPaperName, setNewPaperName] = useState('');
-  const [newPaperRate, setNewPaperRate] = useState(80);
-  const [showAddGsm, setShowAddGsm] = useState(false);
-  const [newGsm, setNewGsm] = useState('');
-  const [showAddPrintType, setShowAddPrintType] = useState(false);
-  const [newPrintType, setNewPrintType] = useState('');
+/* ─── NativeSelect: styled native select ─── */
+const NativeSelect = ({ value, onChange, children, className, placeholder }) => (
+  <select
+    value={value ?? ''}
+    onChange={e => onChange(e.target.value)}
+    className={cn(
+      'flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm',
+      'ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
+      'disabled:cursor-not-allowed disabled:opacity-50',
+      !value && 'text-muted-foreground',
+      className,
+    )}
+  >
+    {placeholder && <option value="" disabled>{placeholder}</option>}
+    {children}
+  </select>
+);
 
-  // Calculator margins — user-adjustable, defaults from the optimizer
-  const [calcMargins, setCalcMargins] = useState({ ...DEFAULT_MARGINS });
-  const [showMarginsPanel, setShowMarginsPanel] = useState(false);
+/* ─── FieldLabel ─── */
+const FieldLabel = ({ children, required, hint }) => (
+  <div className="flex items-center justify-between mb-1.5">
+    <label className="text-sm font-semibold text-foreground">
+      {children}{required && <span className="text-destructive ml-0.5">*</span>}
+    </label>
+    {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
+  </div>
+);
 
-  // Summary state
-  const [profitPercent, setProfitPercent] = useState(20);
-  const [summary, setSummary] = useState({ 
-    paperCost: 0, printingCost: 0, processCost: 0, totalCost: 0, sellingPrice: 0, costPerUnit: 0, profitAmount: 0 
-  });
-  const [isCalculated, setIsCalculated] = useState(false);
-
-  // Sales persons (static for now)
-  const salesPersons = [
-    { id: 1, name: 'Rahul Verma' },
-    { id: 2, name: 'Anita Desai' },
-    { id: 3, name: 'Kiran Rao' },
-    { id: 4, name: 'Suresh Menon' }
-  ];
-
-  // Save customers to localStorage
-  useEffect(() => {
-    localStorage.setItem('printmaster_customers', JSON.stringify(customerList));
-  }, [customerList]);
-
-  const handleAddCustomer = () => {
-    if (newCustomerName.trim()) {
-      const newCustomer = { 
-        id: Date.now(), 
-        name: newCustomerName.trim(), 
-        phone: newCustomerPhone.trim(),
-        email: newCustomerEmail.trim()
-      };
-      const updatedList = [newCustomer, ...customerList];
-      setCustomerList(updatedList);
-      form.setFieldValue('customerName', newCustomerName.trim());
-      setShowAddCustomer(false);
-      setNewCustomerName('');
-      setNewCustomerPhone('');
-      setNewCustomerEmail('');
-      message.success('Customer added successfully!');
-    }
-  };
-
-  const handleSizeCheck = () => {
-    const width = form.getFieldValue('customWidth');
-    const height = form.getFieldValue('customHeight');
-    if (width && height) {
-      const result = getRecommendationsFromDimensions(width, height, sizeUnit);
-      setSizeRecommendations(result);
-      if (result.error) {
-        message.warning(result.error);
-      }
-    } else {
-      message.warning('Please enter both width and height');
-    }
-  };
-
-  const applyRecommendedSize = (sizeName) => {
-    form.setFieldValue('sheetSize', sizeName);
-    if (sizeRecommendations?.recommendations) {
-      const rec = sizeRecommendations.recommendations.find(r => r.size === sizeName);
-      if (rec) {
-        form.setFieldValue('ups', rec.ups);
-        message.success(`Applied ${sizeName} with ${rec.ups} ups - ${rec.wastePercent}% waste`);
-      }
-    }
-  };
-
-  // Calculator Modal Functions
-  const handleCalculate = () => {
-    if (!calcWidth || !calcHeight) {
-      message.warning('Please enter both dimensions');
-      return;
-    }
-    const result = getRecommendationsFromDimensions(
-      parseFloat(calcWidth), parseFloat(calcHeight), calcUnit, calcMargins
-    );
-    setCalcResults(result);
-    if (result.recommendations?.length > 0) {
-      setSelectedCalcRec(result.recommendations[0]);
-    } else {
-      setSelectedCalcRec(null);
-    }
-  };
-
-  const applyFromCalculator = (sizeName, ups) => {
-    form.setFieldValue('sheetSize', sizeName);
-    form.setFieldValue('ups', ups);
-    // Convert calc dimensions to current form unit
-    const widthMm = convertToMm(parseFloat(calcWidth), calcUnit);
-    const heightMm = convertToMm(parseFloat(calcHeight), calcUnit);
-    const factor = UNIT_CONVERSIONS[sizeUnit] || 25.4;
-    form.setFieldValue('customWidth', Math.round((widthMm / factor) * 100) / 100);
-    form.setFieldValue('customHeight', Math.round((heightMm / factor) * 100) / 100);
-    setSizeRecommendations(calcResults);
-    setShowCalculator(false);
-    message.success(`Applied ${sizeName} — ${ups} up${ups !== 1 ? 's' : ''}`);
-    // Recalculate costs immediately with updated size/ups
-    setTimeout(() => recalculateAll(), 0);
-  };
-
-  // Calculate all costs
-  const recalculateAll = () => {
-    const values = form.getFieldsValue();
-    const quantity = values.quantity || 1000;
-    const ups = values.ups || 1;
-    const wastagePercent = values.wastagePercent || 5;
-    const gsm = values.gsm || 80;
-    const ratePerKg = values.ratePerKg || 85;
-    const sheetsPerReam = values.sheetsPerReam || 500;
-    
-    // Get sheet size dimensions
-    const selectedSize = STANDARD_SIZES.find(s => s.name === values.sheetSize);
-    const sheetWidth = selectedSize?.width || 210;
-    const sheetHeight = selectedSize?.height || 297;
-    
-    // Paper calculations - CORRECTED
-    const baseSheets = Math.ceil(quantity / ups);
-    const wastageSheets = Math.ceil(baseSheets * (wastagePercent / 100));
-    const totalSheets = baseSheets + wastageSheets;
-    const totalReams = Math.ceil(totalSheets / sheetsPerReam);
-    
-    // Paper weight: (width mm × height mm × GSM) / 1,000,000 = kg per sheet
-    const sheetAreaSqM = (sheetWidth * sheetHeight) / 1000000;
-    const weightPerSheet = sheetAreaSqM * gsm / 1000; // Convert g to kg
-    const paperWeight = totalSheets * weightPerSheet;
-    const paperCost = paperWeight * ratePerKg;
-    
-    // Printing calculations - CORRECTED (impression per sheet)
-    const colorsFront = values.colorsFront || 0;
-    const colorsBack = values.colorsBack || 0;
-    const impressionPerSheet = values.impressionPerSheet || 1;
-    const totalColors = colorsFront + colorsBack;
-    const impressions = totalSheets * totalColors * impressionPerSheet;
-    const ratePerImpression = values.ratePerImpression || 0.15;
-    const setupCost = values.setupCost || 0;
-    const printingCost = (impressions * ratePerImpression) + setupCost;
-    
-    // Plate calculations - CORRECTED
-    const platesFront = values.platesFront || 0;
-    const platesBack = values.platesBack || 0;
-    const plateCostPerPlate = values.plateCostPerPlate || 0;
-    const totalPlates = platesFront + platesBack;
-    const totalPlateCost = totalPlates * plateCostPerPlate;
-    
-    // Process calculations - all per job
-    const designCost = values.designCost || 0;
-    const cuttingCost = values.cutting ? (values.cuttingCost || 0) : 0;
-    const foldingCost = values.folding ? (values.foldingCost || 0) : 0;
-    const laminationCost = values.lamination ? (values.laminationCost || 0) : 0;
-    const bindingCost = values.binding ? (values.bindingCost || 0) : 0;
-    const numberingCost = values.numbering ? (values.numberingCost || 0) : 0;
-    const perforationCost = values.perforation ? (values.perforationCost || 0) : 0;
-    const uvCost = values.uv ? (values.uvCost || 0) : 0;
-    const embossingCost = values.embossing ? (values.embossingCost || 0) : 0;
-    const dieCuttingCost = values.dieCutting ? (values.dieCuttingCost || 0) : 0;
-    
-    const processCost = totalPlateCost + designCost + cuttingCost + foldingCost + 
-                       laminationCost + bindingCost + numberingCost + perforationCost +
-                       uvCost + embossingCost + dieCuttingCost;
-    
-    // Total calculations
-    const totalCost = paperCost + printingCost + processCost;
-    const profitAmount = totalCost * (profitPercent / 100);
-    const sellingPrice = totalCost + profitAmount;
-    const costPerUnit = quantity > 0 ? sellingPrice / quantity : 0;
-    
-    setSummary({
-      paperCost: Math.round(paperCost * 100) / 100,
-      printingCost: Math.round(printingCost * 100) / 100,
-      processCost: Math.round(processCost * 100) / 100,
-      totalCost: Math.round(totalCost * 100) / 100,
-      profitAmount: Math.round(profitAmount * 100) / 100,
-      sellingPrice: Math.round(sellingPrice * 100) / 100,
-      costPerUnit: Math.round(costPerUnit * 100) / 100,
-      totalSheets,
-      totalReams,
-      paperWeight: Math.round(paperWeight * 100) / 100,
-      impressions,
-      totalPlates,
-      totalPlateCost: Math.round(totalPlateCost * 100) / 100
-    });
-    
-    setIsCalculated(true);
-  };
-
-  const handleSave = async () => {
-    try {
-      const values = await form.validateFields();
-      
-      if (!isCalculated) {
-        message.warning('Please calculate estimate first');
-        return;
-      }
-      
-      // Build estimate object
-      const estimateData = {
-        estimateNo: estimateNo,
-        jobDetails: {
-          customerName: values.customerName,
-          jobName: values.jobName,
-          productType: values.productType,
-          quantity: values.quantity,
-          deliveryDate: values.deliveryDate?.format('YYYY-MM-DD'),
-          salesPerson: values.salesPerson,
-          remarks: values.remarks
-        },
-        paperEstimation: {
-          paperType: values.paperType,
-          gsm: values.gsm,
-          sheetSize: values.sheetSize,
-          ups: values.ups,
-          wastagePercent: values.wastagePercent,
-          ratePerKg: values.ratePerKg,
-          sheetsPerReam: values.sheetsPerReam,
-          customWidth: values.customWidth,
-          customHeight: values.customHeight,
-          sizeUnit: sizeUnit,
-          totalSheets: summary.totalSheets,
-          totalReams: summary.totalReams,
-          paperWeight: summary.paperWeight,
-          paperCost: summary.paperCost
-        },
-        printingEstimation: {
-          machine: values.machine,
-          printType: values.printType,
-          colorsFront: values.colorsFront,
-          colorsBack: values.colorsBack,
-          impressionPerSheet: values.impressionPerSheet,
-          impressions: summary.impressions,
-          setupCost: values.setupCost,
-          ratePerImpression: values.ratePerImpression,
-          printingCost: summary.printingCost
-        },
-        prePostPress: {
-          platesFront: values.platesFront,
-          platesBack: values.platesBack,
-          plateCostPerPlate: values.plateCostPerPlate,
-          totalPlates: summary.totalPlates,
-          totalPlateCost: summary.totalPlateCost,
-          designCost: values.designCost,
-          processes: {
-            cutting: { enabled: values.cutting, cost: values.cuttingCost },
-            folding: { enabled: values.folding, cost: values.foldingCost },
-            lamination: { enabled: values.lamination, cost: values.laminationCost },
-            binding: { enabled: values.binding, cost: values.bindingCost },
-            numbering: { enabled: values.numbering, cost: values.numberingCost },
-            perforation: { enabled: values.perforation, cost: values.perforationCost },
-            uv: { enabled: values.uv, cost: values.uvCost },
-            embossing: { enabled: values.embossing, cost: values.embossingCost },
-            dieCutting: { enabled: values.dieCutting, cost: values.dieCuttingCost }
-          },
-          processCost: summary.processCost
-        },
-        summary: {
-          paperCost: summary.paperCost,
-          printingCost: summary.printingCost,
-          processCost: summary.processCost,
-          totalCost: summary.totalCost,
-          profitPercent: profitPercent,
-          profitAmount: summary.profitAmount,
-          sellingPrice: summary.sellingPrice,
-          costPerUnit: summary.costPerUnit
-        }
-      };
-      
-      const savedEstimate = saveEstimate(estimateData);
-      message.success(`Estimate ${savedEstimate.id} saved successfully!`);
-      router.push('/estimates');
-    } catch (err) {
-      console.error(err);
-      message.error('Please fill all required fields');
-    }
-  };
-
-  const filteredCustomers = customerList.filter(c => 
-    c.name.toLowerCase().includes(customerSearch.toLowerCase())
-  );
-
-  const sheetSizeOptions = STANDARD_SIZES.map(s => ({ 
-    value: s.name, 
-    label: `${s.name} (${s.width}×${s.height}mm)` 
-  }));
-
-  const unitOptions = [
-    { value: 'inch', label: 'Inch' },
-    { value: 'mm', label: 'mm' },
-    { value: 'cm', label: 'cm' }
-  ];
-
-  // Summary Card Component
-  const SummaryCard = ({ sticky = true }) => (
-    <Card 
-      title={
-        <Space>
-          <CalculatorOutlined />
-          <span>Cost Summary</span>
-          {isCalculated && <CheckCircleOutlined style={{ color: 'hsl(var(--success))' }} />}
-        </Space>
-      }
-      style={sticky ? { position: 'sticky', top: 16 } : {}}
-      className="summary-card"
+/* ─── SectionCard: numbered collapsible card ─── */
+const SectionCard = ({ number, label, icon: Icon, color, open, onToggle, children }) => (
+  <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
+    <button
+      type="button" onClick={onToggle}
+      className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50/70 transition-colors"
     >
-      <Space direction="vertical" style={{ width: '100%' }} size="small">
-        {/* Estimate Number */}
-        <div style={{ 
-          textAlign: 'center', 
-          padding: '8px 12px', 
-          background: 'hsl(var(--primary) / 0.1)', 
-          borderRadius: 8,
-          marginBottom: 8
-        }}>
-          <Text type="secondary" style={{ fontSize: 11 }}>ESTIMATE NO.</Text>
-          <Title level={5} style={{ margin: 0, color: 'hsl(var(--primary))' }}>{estimateNo}</Title>
+      <div className="flex items-center gap-4">
+        <div className={cn('w-9 h-9 rounded-xl flex items-center justify-center shrink-0', color)}>
+          <Icon className="w-4 h-4" />
         </div>
-
-        <Row justify="space-between">
-          <Text type="secondary">Paper Cost:</Text>
-          <Text strong>{formatCurrency(summary.paperCost)}</Text>
-        </Row>
-        <Row justify="space-between">
-          <Text type="secondary">Printing Cost:</Text>
-          <Text strong>{formatCurrency(summary.printingCost)}</Text>
-        </Row>
-        <Row justify="space-between">
-          <Text type="secondary">Process Cost:</Text>
-          <Text strong>{formatCurrency(summary.processCost)}</Text>
-        </Row>
-        
-        <Divider style={{ margin: '12px 0' }} />
-        
-        <Row justify="space-between">
-          <Text strong style={{ fontSize: 15 }}>Total Cost:</Text>
-          <Text strong style={{ fontSize: 15 }}>{formatCurrency(summary.totalCost)}</Text>
-        </Row>
-        
-        <Divider style={{ margin: '12px 0' }} />
-        
-        <Row justify="space-between" align="middle">
-          <Text type="secondary">Profit %:</Text>
-          <InputNumber 
-            min={0} 
-            max={100} 
-            value={profitPercent} 
-            onChange={(val) => {
-              setProfitPercent(val || 0);
-              if (isCalculated) recalculateAll();
-            }}
-            style={{ width: 90 }} 
-            addonAfter="%" 
-            size="small" 
-          />
-        </Row>
-        <Row justify="space-between">
-          <Text type="secondary">Profit Amount:</Text>
-          <Text type="success" strong>{formatCurrency(summary.profitAmount)}</Text>
-        </Row>
-        
-        <Divider style={{ margin: '12px 0' }} />
-        
-        <div style={{ 
-          textAlign: 'center', 
-          padding: '16px', 
-          background: 'linear-gradient(135deg, hsl(var(--success) / 0.1) 0%, hsl(var(--success) / 0.05) 100%)', 
-          borderRadius: 12,
-          border: '1px solid hsl(var(--success) / 0.2)'
-        }}>
-          <Text type="secondary" style={{ fontSize: 12 }}>SELLING PRICE</Text>
-          <Title level={2} style={{ margin: '8px 0', color: 'hsl(var(--success))' }}>
-            {formatCurrency(summary.sellingPrice)}
-          </Title>
-          <Tag color="green">Per unit: {formatCurrency(summary.costPerUnit)}</Tag>
+        <div className="text-left">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground leading-none mb-0.5">{number}</p>
+          <p className="text-base font-bold text-foreground">{label}</p>
         </div>
+      </div>
+      {open ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+    </button>
+    {open && (
+      <div className="px-6 pb-6 pt-2 border-t border-gray-100">
+        {children}
+      </div>
+    )}
+  </div>
+);
 
-        {summary.totalSheets > 0 && (
-          <div style={{ marginTop: 12, padding: 12, background: 'hsl(var(--muted))', borderRadius: 8 }}>
-            <Row justify="space-between">
-              <Text type="secondary" style={{ fontSize: 12 }}>Total Sheets:</Text>
-              <Text style={{ fontSize: 12 }}>{summary.totalSheets?.toLocaleString()}</Text>
-            </Row>
-            <Row justify="space-between">
-              <Text type="secondary" style={{ fontSize: 12 }}>Total Reams:</Text>
-              <Text style={{ fontSize: 12 }}>{summary.totalReams}</Text>
-            </Row>
-            <Row justify="space-between">
-              <Text type="secondary" style={{ fontSize: 12 }}>Paper Weight:</Text>
-              <Text style={{ fontSize: 12 }}>{summary.paperWeight} kg</Text>
-            </Row>
-            <Row justify="space-between">
-              <Text type="secondary" style={{ fontSize: 12 }}>Impressions:</Text>
-              <Text style={{ fontSize: 12 }}>{summary.impressions?.toLocaleString()}</Text>
-            </Row>
-            {summary.totalPlates > 0 && (
-              <Row justify="space-between">
-                <Text type="secondary" style={{ fontSize: 12 }}>Total Plates:</Text>
-                <Text style={{ fontSize: 12 }}>{summary.totalPlates} ({formatCurrency(summary.totalPlateCost)})</Text>
-              </Row>
-            )}
-          </div>
-        )}
-      </Space>
-    </Card>
-  );
+/* ─── CustomerCombobox ─── */
+const CustomerCombobox = ({ value, onChange, customers, onAddNew }) => {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const filtered = customers.filter(c => c.name.toLowerCase().includes(search.toLowerCase()));
+  const selected = customers.find(c => c.name === value);
 
   return (
-    <div className="create-estimate-page animate-fade-in">
-      {/* Header */}
-      <div className="page-header" style={{ 
-        marginBottom: 24, 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center',
-        flexWrap: 'wrap',
-        gap: 12
-      }}>
-        <div>
-          <Title level={3} style={{ margin: 0 }}>Create New Estimate</Title>
-          <Text type="secondary">Fill in the details to generate cost estimate</Text>
+    <div ref={ref} className="relative">
+      <button
+        type="button" onClick={() => setOpen(o => !o)}
+        className={cn(
+          'flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm',
+          'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
+          !value && 'text-muted-foreground',
+        )}
+      >
+        <span className="truncate">{selected ? selected.name : 'Search or select customer…'}</span>
+        <ChevronDown className="w-4 h-4 opacity-50 shrink-0 ml-2" />
+      </button>
+      {open && (
+        <div className="absolute z-50 mt-1 w-full rounded-xl border border-gray-100 bg-white shadow-xl overflow-hidden">
+          <div className="p-2 border-b border-gray-100">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-muted-foreground" />
+              <input autoFocus placeholder="Search customers…" value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="w-full h-8 pl-8 pr-3 text-sm rounded-md border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring" />
+            </div>
+          </div>
+          <div className="max-h-52 overflow-y-auto">
+            {filtered.length === 0 && <p className="py-6 text-center text-sm text-muted-foreground">No customers found</p>}
+            {filtered.map(c => (
+              <button key={c.id} type="button"
+                onClick={() => { onChange(c.name); setOpen(false); setSearch(''); }}
+                className="w-full text-left px-3 py-2.5 hover:bg-gray-50 transition-colors flex items-center justify-between"
+              >
+                <div>
+                  <p className="text-sm font-medium text-foreground">{c.name}</p>
+                  {c.phone && <p className="text-xs text-muted-foreground">{c.phone}</p>}
+                </div>
+                {value === c.name && <Check className="w-3.5 h-3.5 text-primary" />}
+              </button>
+            ))}
+          </div>
+          <div className="p-2 border-t border-gray-100">
+            <button type="button" onClick={() => { setOpen(false); onAddNew(); }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm font-semibold text-primary rounded-md hover:bg-primary/5 transition-colors">
+              <Plus className="w-3.5 h-3.5" /> Add new customer
+            </button>
+          </div>
         </div>
-        <Space wrap>
-          <Button onClick={() => router.push('/estimates')}>Cancel</Button>
-          <Button 
-            type="primary" 
-            icon={<SaveOutlined />} 
-            onClick={handleSave}
-            disabled={!isCalculated}
-          >
-            Save Estimate
-          </Button>
-        </Space>
+      )}
+    </div>
+  );
+};
+
+/* ─── ProcessToggle: finishing process row ─── */
+const ProcessToggle = ({ label, checked, cost, onToggle, onCostChange }) => (
+  <div className={cn(
+    'flex items-center gap-3 rounded-xl border p-3 transition-all duration-150',
+    checked ? 'border-primary/25 bg-primary/5' : 'border-gray-100 bg-white hover:border-gray-200',
+  )}>
+    <button type="button" onClick={onToggle}
+      className={cn(
+        'w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-colors',
+        checked ? 'bg-primary border-primary' : 'border-gray-300 hover:border-gray-400',
+      )}>
+      {checked && <Check className="w-3 h-3 text-white" />}
+    </button>
+    <span className={cn('text-sm flex-1 select-none', checked ? 'font-semibold text-foreground' : 'text-muted-foreground')}>
+      {label}
+    </span>
+    {checked && (
+      <div className="relative w-24">
+        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">₹</span>
+        <NumInput value={cost} onChange={onCostChange} placeholder="0" className="h-8 pl-6 text-sm" />
+      </div>
+    )}
+  </div>
+);
+
+/* ═══════════════════════════════════════════════════════
+   MAIN COMPONENT
+═══════════════════════════════════════════════════════ */
+const CreateEstimate = () => {
+  const router = useRouter();
+  const { saveEstimate, generateEstimateId } = useEstimate();
+  const { paperTypes, productTypes, gsmOptions, addProductType, addGsmOption, addPaperType, customers, addCustomer } = useMasterData();
+
+  /* estimate number */
+  const [estimateNo, setEstimateNo] = useState('');
+  useEffect(() => { setEstimateNo(generateEstimateId ? generateEstimateId() : `EST-${Date.now()}`); }, []);
+
+  /* open sections */
+  const [openSections, setOpenSections] = useState({ job: true, paper: true, printing: true, process: true });
+  const toggleSection = (k) => setOpenSections(s => ({ ...s, [k]: !s[k] }));
+
+  /* form state */
+  const DEFAULTS = {
+    customerName: '', jobName: '', productType: '', quantity: 1000, deliveryDate: '', salesPerson: '', remarks: '',
+    paperType: '', gsm: 80, sheetSize: '', ups: 1, wastagePercent: 5, ratePerKg: 85, sheetsPerReam: 500,
+    printType: 'Single Side', isCut: false, ratePerImpression: 0.15, setupCost: 500,
+    platesFront: 0, platesBack: 0, plateCostPerPlate: 150, designCost: 0,
+    cutting: false, cuttingCost: 0, folding: false, foldingCost: 0, lamination: false, laminationCost: 0,
+    binding: false, bindingCost: 0, numbering: false, numberingCost: 0, perforation: false, perforationCost: 0,
+    uv: false, uvCost: 0, embossing: false, embossingCost: 0, dieCutting: false, dieCuttingCost: 0,
+  };
+  const [f, setF] = useState(DEFAULTS);
+  const set = (field, val) => setF(prev => ({ ...prev, [field]: val }));
+
+  /* summary */
+  const [profitPercent, setProfitPercent] = useState(20);
+  const [summary, setSummary] = useState({
+    paperCost: 0, printingCost: 0, processCost: 0, totalCost: 0,
+    sellingPrice: 0, costPerUnit: 0, profitAmount: 0,
+    totalSheets: 0, totalReams: 0, paperWeight: 0, impressions: 0, totalPlates: 0, totalPlateCost: 0,
+    weightPerSheet_g: 0, weightPerRam_kg: 0, pricePerRam: 0,
+  });
+
+  /* dialogs */
+  const [dlg, setDlg] = useState({ customer: false, product: false, paper: false, gsm: false });
+  const openDlg = (k) => setDlg(d => ({ ...d, [k]: true }));
+  const closeDlg = (k) => setDlg(d => ({ ...d, [k]: false }));
+  const [newCustomer, setNewCustomer] = useState({ name: '', phone: '', email: '' });
+  const [newProductType, setNewProductType] = useState('');
+  const [newPaperName, setNewPaperName] = useState('');
+  const [newPaperRate, setNewPaperRate] = useState(80);
+  const [newGsm, setNewGsm] = useState('');
+
+
+  /* calculator */
+  const [showCalculator, setShowCalculator] = useState(false);
+  const [calcMargins, setCalcMargins] = useState({ ...DEFAULT_MARGINS });
+  const [sizeRecommendations, setSizeRecommendations] = useState(null);
+
+  /* validation */
+  const [errors, setErrors] = useState({});
+
+  const salesPersons = ['Rahul Verma', 'Anita Desai', 'Kiran Rao', 'Suresh Menon'];
+
+  /* ── recalculate ── */
+  const recalculate = useCallback((fields, profit) => {
+    const qty = Number(fields.quantity) || 1000;
+    const ups = Number(fields.ups) || 1;
+    const gsm = Number(fields.gsm) || 80;
+    const rateKg = Number(fields.ratePerKg) || 85;
+    const ream = Number(fields.sheetsPerReam) || 500;
+    const sz = STANDARD_SIZES.find(s => s.name === fields.sheetSize);
+    const sw = sz?.width || 210, sh = sz?.height || 297;
+    // Wastage = margin/border area lost on each sheet — already paid for in full sheet cost.
+    // It does NOT add extra sheets; sheet count is purely qty ÷ ups.
+    const totalSheets = Math.ceil(qty / ups);
+    const totalReams = Math.ceil(totalSheets / ream);
+    // Spreadsheet-accurate per-ream formula:
+    // Weight/Sheet (g) = (w_mm × h_mm / 1,000,000) × GSM
+    // Weight/Ream (kg) = (weightPerSheet_g × sheetsPerReam) / 1000
+    // Price/Ream (₹)  = weightPerRam_kg × ratePerKg
+    const weightPerSheet_g = Math.round((sw * sh / 1e6) * gsm * 10000) / 10000;
+    const weightPerRam_kg  = Math.round((weightPerSheet_g * ream) / 1000 * 10000) / 10000;
+    const pricePerRam      = Math.round(weightPerRam_kg * rateKg * 100) / 100;
+    const paperWeight      = Math.round(weightPerRam_kg * totalReams * 100) / 100;
+    const paperCost        = Math.round(pricePerRam * totalReams * 100) / 100;
+    const isCut = !!fields.isCut;
+    const printType = fields.printType || 'Single Side';
+    const printMultiplier = isCut ? (printType === 'Both Side' ? 4 : 2) : (printType === 'Both Side' ? 2 : 1);
+    const impressions = totalSheets * printMultiplier;
+    const printingCost = Math.round((impressions * (Number(fields.ratePerImpression) || 0) + (Number(fields.setupCost) || 0)) * 100) / 100;
+    const pf = Number(fields.platesFront) || 0, pb = Number(fields.platesBack) || 0;
+    const totalPlates = pf + pb;
+    const totalPlateCost = Math.round(totalPlates * (Number(fields.plateCostPerPlate) || 0) * 100) / 100;
+    const processCost = Math.round((
+      totalPlateCost + (Number(fields.designCost) || 0) +
+      ['cutting','folding','lamination','binding','numbering','perforation','uv','embossing','dieCutting']
+        .reduce((sum, k) => sum + (fields[k] ? Number(fields[`${k}Cost`]) || 0 : 0), 0)
+    ) * 100) / 100;
+    const totalCost = Math.round((paperCost + printingCost + processCost) * 100) / 100;
+    const profitAmount = Math.round(totalCost * (profit / 100) * 100) / 100;
+    const sellingPrice = Math.round((totalCost + profitAmount) * 100) / 100;
+    const costPerUnit = Math.round((qty > 0 ? sellingPrice / qty : 0) * 100) / 100;
+    setSummary({ paperCost, printingCost, processCost, totalCost, profitAmount, sellingPrice, costPerUnit, totalSheets, totalReams, paperWeight, impressions, totalPlates, totalPlateCost, weightPerSheet_g, weightPerRam_kg, pricePerRam });
+  }, []);
+
+  useEffect(() => {
+    const t = setTimeout(() => recalculate(f, profitPercent), 300);
+    return () => clearTimeout(t);
+  }, [f, profitPercent, recalculate]);
+
+  /* ── save ── */
+  const validate = () => {
+    const e = {};
+    if (!f.customerName) e.customerName = 'Required';
+    if (!f.jobName) e.jobName = 'Required';
+    if (!f.productType) e.productType = 'Required';
+    if (!f.quantity) e.quantity = 'Required';
+    if (!f.paperType) e.paperType = 'Required';
+    if (!f.sheetSize) e.sheetSize = 'Required';
+    setErrors(e);
+    if (Object.keys(e).length > 0) setOpenSections({ job: true, paper: true, printing: true, process: true });
+    return Object.keys(e).length === 0;
+  };
+
+  const handleSave = () => {
+    if (!validate()) return;
+    saveEstimate({
+      estimateNo,
+      jobDetails: { customerName: f.customerName, jobName: f.jobName, productType: f.productType, quantity: f.quantity, deliveryDate: f.deliveryDate, salesPerson: f.salesPerson, remarks: f.remarks },
+      paperEstimation: { paperType: f.paperType, gsm: f.gsm, sheetSize: f.sheetSize, ups: f.ups, wastagePercent: f.wastagePercent, ratePerKg: f.ratePerKg, sheetsPerReam: f.sheetsPerReam, ...{ totalSheets: summary.totalSheets, totalReams: summary.totalReams, paperWeight: summary.paperWeight, paperCost: summary.paperCost } },
+      printingEstimation: { printType: f.printType, isCut: f.isCut, impressions: summary.impressions, setupCost: f.setupCost, ratePerImpression: f.ratePerImpression, printingCost: summary.printingCost },
+      prePostPress: { platesFront: f.platesFront, platesBack: f.platesBack, plateCostPerPlate: f.plateCostPerPlate, totalPlates: summary.totalPlates, totalPlateCost: summary.totalPlateCost, designCost: f.designCost, processes: Object.fromEntries(['cutting','folding','lamination','binding','numbering','perforation','uv','embossing','dieCutting'].map(k => [k, { enabled: f[k], cost: f[`${k}Cost`] }])), processCost: summary.processCost },
+      summary: { paperCost: summary.paperCost, printingCost: summary.printingCost, processCost: summary.processCost, totalCost: summary.totalCost, profitPercent, profitAmount: summary.profitAmount, sellingPrice: summary.sellingPrice, costPerUnit: summary.costPerUnit },
+    });
+    router.push('/estimates');
+  };
+
+  const handleReset = () => {
+    setF(DEFAULTS);
+    setErrors({});
+    setEstimateNo(generateEstimateId ? generateEstimateId() : `EST-${Date.now()}`);
+  };
+
+  const applyFromCalculator = (sizeName, ups, _cw, _ch, _cu, calcResults, rec) => {
+    setF(prev => ({
+      ...prev,
+      sheetSize: sizeName,
+      ups,
+      wastagePercent: rec?.wastePercent ?? prev.wastagePercent,
+    }));
+    setSizeRecommendations(calcResults);
+  };
+
+  const sheetSizeOptions = STANDARD_SIZES.map(s => ({ value: s.name, label: `${s.name} (${s.width}×${s.height}mm)` }));
+
+  const finishingProcesses = [
+    { key: 'cutting', label: 'Cutting' }, { key: 'folding', label: 'Folding' },
+    { key: 'lamination', label: 'Lamination' }, { key: 'binding', label: 'Binding' },
+    { key: 'numbering', label: 'Numbering' }, { key: 'perforation', label: 'Perforation' },
+    { key: 'uv', label: 'UV Coating' }, { key: 'embossing', label: 'Embossing' },
+    { key: 'dieCutting', label: 'Die Cutting' },
+  ];
+
+  const tot = summary.totalCost || 1;
+  const paperPct = Math.round((summary.paperCost / tot) * 100) || 0;
+  const printPct = Math.round((summary.printingCost / tot) * 100) || 0;
+  const procPct = Math.max(100 - paperPct - printPct, 0);
+
+  /* ═══ RENDER ═══ */
+  return (
+    <div className="min-h-screen bg-gray-50">
+
+      {/* ── Header ── */}
+      <div className="bg-white border-b border-gray-100 px-4 sm:px-6 py-4">
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3">
+            <button type="button" onClick={() => router.push('/estimates')}
+              className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+              <ArrowLeft className="w-4 h-4" /> Estimates
+            </button>
+            <Separator orientation="vertical" className="h-5" />
+            <div>
+              <h1 className="text-2xl font-bold text-foreground tracking-tight leading-tight">Create New Estimate</h1>
+              <p className="text-sm text-muted-foreground hidden sm:block">Fill in job details to generate a cost estimate</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-bold">
+              <FileText className="w-3.5 h-3.5" />{estimateNo || '—'}
+            </div>
+            <Button variant="outline" size="sm" onClick={() => router.push('/estimates')}>Cancel</Button>
+            <Button size="sm" onClick={handleSave} className="gap-1.5">
+              <Save className="w-3.5 h-3.5" />Save Estimate
+            </Button>
+          </div>
+        </div>
       </div>
 
-      <Row gutter={[24, 24]}>
-        {/* Form Section */}
-        <Col xs={24} lg={16}>
-          <div style={{ 
-            maxHeight: isMobile ? 'none' : 'calc(100vh - 200px)', 
-            overflowY: isMobile ? 'visible' : 'auto',
-            paddingRight: isMobile ? 0 : 8
-          }}>
-            <Form 
-              form={form} 
-              layout="vertical" 
-              requiredMark="optional"
-              initialValues={{
-                quantity: 1000,
-                gsm: 80,
-                ups: 1,
-                wastagePercent: 5,
-                ratePerKg: 85,
-                sheetsPerReam: 500,
-                colorsFront: 4,
-                colorsBack: 0,
-                impressionPerSheet: 1,
-                ratePerImpression: 0.15,
-                setupCost: 500,
-                platesFront: 0,
-                platesBack: 0,
-                plateCostPerPlate: 150,
-                designCost: 0
-              }}
-            >
-              <Collapse 
-                defaultActiveKey={['job', 'paper', 'printing', 'process']} 
-                expandIconPosition="end"
-                className="estimate-collapse"
-              >
-                {/* Job Details */}
-                <Panel 
-                  header={
-                    <Space>
-                      <Badge count={<FileTextOutlined style={{ color: 'hsl(var(--primary))' }} />} />
-                      <Text strong>Job Details</Text>
-                    </Space>
-                  } 
-                  key="job"
-                >
-                  <Row gutter={[16, 0]}>
-                    {/* Estimate Number - Auto Generated */}
-                    <Col xs={24} md={8}>
-                      <Form.Item label="Estimate No.">
-                        <Input 
-                          value={estimateNo} 
-                          disabled 
-                          style={{ background: 'hsl(var(--muted))', fontWeight: 600 }}
-                          size={isMobile ? 'large' : 'middle'}
-                        />
-                      </Form.Item>
-                    </Col>
-                    
-                    <Col xs={24} md={16}>
-                      <Form.Item 
-                        name="customerName" 
-                        label={
-                          <Space>
-                            Customer Name
-                            <Tooltip title="Select existing customer or add new">
-                              <InfoCircleOutlined style={{ color: 'hsl(var(--muted-foreground))' }} />
-                            </Tooltip>
-                          </Space>
-                        }
-                        rules={[{ required: true, message: 'Please select customer' }]}
-                      >
-                        <Select
-                          showSearch
-                          placeholder="Search or add customer..."
-                          filterOption={false}
-                          onSearch={setCustomerSearch}
-                          size={isMobile ? 'large' : 'middle'}
-                          dropdownRender={(menu) => (
-                            <div>
-                              <div style={{ padding: '8px 12px' }}>
-                                <Input 
-                                  prefix={<SearchOutlined />} 
-                                  placeholder="Search customers..." 
-                                  value={customerSearch} 
-                                  onChange={e => setCustomerSearch(e.target.value)}
-                                  allowClear
-                                />
-                              </div>
-                              <Divider style={{ margin: '8px 0' }} />
-                              <div style={{ padding: '4px 12px 8px' }}>
-                                <Button 
-                                  type="primary" 
-                                  ghost 
-                                  block 
-                                  icon={<PlusOutlined />} 
-                                  onClick={() => setShowAddCustomer(true)}
-                                >
-                                  Add New Customer
-                                </Button>
-                              </div>
-                              <Divider style={{ margin: '0' }} />
-                              <div style={{ maxHeight: 200, overflowY: 'auto' }}>
-                                {menu}
-                              </div>
-                            </div>
-                          )}
-                          options={filteredCustomers.map(c => ({ 
-                            value: c.name, 
-                            label: (
-                              <div>
-                                <div>{c.name}</div>
-                                {c.phone && <Text type="secondary" style={{ fontSize: 12 }}>{c.phone}</Text>}
-                              </div>
-                            )
-                          }))}
-                        />
-                      </Form.Item>
-                    </Col>
-                    <Col xs={24} md={12}>
-                      <Form.Item 
-                        name="jobName" 
-                        label="Job Name / Description"
-                        rules={[{ required: true, message: 'Please enter job name' }]}
-                      >
-                        <Input 
-                          placeholder="e.g., Annual Report 2024, Wedding Cards" 
-                          size={isMobile ? 'large' : 'middle'} 
-                        />
-                      </Form.Item>
-                    </Col>
-                    <Col xs={24} md={12}>
-                      <Form.Item 
-                        name="productType" 
-                        label="Product Type"
-                        rules={[{ required: true, message: 'Please select product type' }]}
-                      >
-                        <Select 
-                          placeholder="Select product type..." 
-                          size={isMobile ? 'large' : 'middle'}
-                          showSearch
-                          dropdownRender={(menu) => (
-                            <div>
-                              {menu}
-                              <Divider style={{ margin: '8px 0' }} />
-                              <div style={{ padding: '4px 12px 8px' }}>
-                                <Button 
-                                  type="dashed" 
-                                  block 
-                                  icon={<PlusOutlined />} 
-                                  onClick={() => setShowAddProductType(true)}
-                                  size="small"
-                                >
-                                  Add New Type
-                                </Button>
-                              </div>
-                            </div>
-                          )}
-                          options={productTypes.map(p => ({ value: p, label: p }))}
-                        />
-                      </Form.Item>
-                    </Col>
-                    <Col xs={12} md={6}>
-                      <Form.Item 
-                        name="quantity" 
-                        label="Quantity (pcs)"
-                        rules={[{ required: true, message: 'Enter quantity' }]}
-                      >
-                        <InputNumber 
-                          min={1} 
-                          style={{ width: '100%' }} 
-                          formatter={v => `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')} 
-                          parser={v => v.replace(/,/g, '')} 
-                          size={isMobile ? 'large' : 'middle'} 
-                        />
-                      </Form.Item>
-                    </Col>
-                    <Col xs={12} md={6}>
-                      <Form.Item name="deliveryDate" label="Delivery Date">
-                        <DatePicker 
-                          style={{ width: '100%' }} 
-                          size={isMobile ? 'large' : 'middle'}
-                          format="DD-MM-YYYY"
-                        />
-                      </Form.Item>
-                    </Col>
-                    <Col xs={24} md={6}>
-                      <Form.Item name="salesPerson" label="Sales Person">
-                        <Select 
-                          placeholder="Select sales person..." 
-                          options={salesPersons.map(s => ({ value: s.name, label: s.name }))} 
-                          size={isMobile ? 'large' : 'middle'}
-                          allowClear
-                        />
-                      </Form.Item>
-                    </Col>
-                    <Col xs={24} md={6}>
-                      <Form.Item name="remarks" label="Remarks / Notes">
-                        <Input 
-                          placeholder="Any special instructions..."
-                          size={isMobile ? 'large' : 'middle'}
-                        />
-                      </Form.Item>
-                    </Col>
-                  </Row>
-                </Panel>
+      {/* ── Body ── */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+        <div className="flex flex-col lg:flex-row gap-6 items-start">
 
-                {/* Paper Estimation */}
-                <Panel 
-                  header={
-                    <Space>
-                      <Badge count={<ScissorOutlined style={{ color: 'hsl(var(--warning))' }} />} />
-                      <Text strong>Paper Estimation</Text>
-                    </Space>
-                  } 
-                  key="paper"
-                >
-                  {/* Size Recommendation */}
-                  <Card 
-                    size="small" 
-                    style={{ 
-                      marginBottom: 16, 
-                      background: 'linear-gradient(135deg, hsl(var(--primary) / 0.05) 0%, hsl(var(--primary) / 0.02) 100%)',
-                      border: '1px solid hsl(var(--primary) / 0.15)'
-                    }}
-                  >
-                    <Row align="middle" gutter={[12, 12]}>
-                      <Col flex="auto">
-                        <Space size={4}>
-                          <BulbOutlined style={{ color: 'hsl(var(--primary))' }} />
-                          <Text strong style={{ color: 'hsl(var(--primary))' }}>Smart Size Finder</Text>
-                        </Space>
-                        <br />
-                        <Text type="secondary" style={{ fontSize: 12 }}>
-                          Enter customer's finished size to find the optimal paper sheet with minimum wastage
-                        </Text>
-                      </Col>
-                      <Col>
-                        <Button 
-                          type="primary"
-                          ghost
-                          icon={<CalculatorOutlined />} 
-                          onClick={() => setShowCalculator(true)}
-                        >
-                          Open Size Calculator
-                        </Button>
-                      </Col>
-                    </Row>
-                  </Card>
+          {/* ═══ Form column ═══ */}
+          <div className="flex-1 min-w-0 space-y-4">
 
-                  {sizeRecommendations?.recommendations && (
-                    <Alert
-                      type="success"
-                      style={{ marginBottom: 16 }}
-                      message={
-                        <div>
-                          <Text strong style={{ color: 'hsl(var(--success))' }}>
-                            Applied Size — Top Options (click to switch):
-                          </Text>
-                          <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                            {sizeRecommendations.recommendations.slice(0, 3).map((rec, i) => (
-                              <Tag 
-                                key={rec.size} 
-                                color={i === 0 ? 'success' : i === 1 ? 'processing' : 'default'} 
-                                style={{ cursor: 'pointer', padding: '6px 12px', fontSize: 13 }} 
-                                onClick={() => applyRecommendedSize(rec.size)}
-                              >
-                                {i === 0 && '⭐ '}{rec.size} • {rec.ups} up{rec.ups !== 1 ? 's' : ''} • {rec.wastePercent}% waste
-                              </Tag>
-                            ))}
-                          </div>
-                        </div>
-                      }
-                    />
-                  )}
-
-                  <Divider orientation="left" plain style={{ marginTop: 8 }}>Paper Selection</Divider>
-
-                  <Row gutter={[16, 0]}>
-                    <Col xs={24} md={8}>
-                      <Form.Item 
-                        name="paperType" 
-                        label="Paper Type"
-                        rules={[{ required: true, message: 'Select paper type' }]}
-                      >
-                        <Select 
-                          placeholder="Select paper..." 
-                          size={isMobile ? 'large' : 'middle'}
-                          showSearch
-                          dropdownRender={(menu) => (
-                            <div>
-                              {menu}
-                              <Divider style={{ margin: '8px 0' }} />
-                              <div style={{ padding: '4px 12px 8px' }}>
-                                <Button 
-                                  type="dashed" 
-                                  block 
-                                  icon={<PlusOutlined />} 
-                                  onClick={() => setShowAddPaperType(true)}
-                                  size="small"
-                                >
-                                  Add New Paper
-                                </Button>
-                              </div>
-                            </div>
-                          )}
-                          options={paperTypes.map(p => ({ 
-                            value: p.name, 
-                            label: `${p.name} (₹${p.ratePerKg}/kg)` 
-                          }))}
-                          onChange={(val) => {
-                            const paper = paperTypes.find(p => p.name === val);
-                            if (paper) {
-                              form.setFieldValue('ratePerKg', paper.ratePerKg);
-                            }
-                          }}
-                        />
-                      </Form.Item>
-                    </Col>
-                    <Col xs={12} md={4}>
-                      <Form.Item 
-                        name="gsm" 
-                        label="GSM"
-                        rules={[{ required: true }]}
-                      >
-                        <Select 
-                          size={isMobile ? 'large' : 'middle'}
-                          showSearch
-                          dropdownRender={(menu) => (
-                            <div>
-                              {menu}
-                              <Divider style={{ margin: '8px 0' }} />
-                              <div style={{ padding: '4px 12px 8px' }}>
-                                <Button 
-                                  type="dashed" 
-                                  block 
-                                  icon={<PlusOutlined />} 
-                                  onClick={() => setShowAddGsm(true)}
-                                  size="small"
-                                >
-                                  Add GSM
-                                </Button>
-                              </div>
-                            </div>
-                          )}
-                          options={gsmOptions.map(g => ({ value: g, label: `${g} GSM` }))}
-                        />
-                      </Form.Item>
-                    </Col>
-                    <Col xs={12} md={6}>
-                      <Form.Item 
-                        name="sheetSize" 
-                        label="Sheet Size"
-                        rules={[{ required: true, message: 'Select sheet size' }]}
-                      >
-                        <Select 
-                          placeholder="Select size..." 
-                          options={sheetSizeOptions} 
-                          size={isMobile ? 'large' : 'middle'} 
-                        />
-                      </Form.Item>
-                    </Col>
-                    <Col xs={8} md={3}>
-                      <Form.Item name="ups" label="Ups">
-                        <InputNumber 
-                          min={1} 
-                          max={100} 
-                          style={{ width: '100%' }} 
-                          size={isMobile ? 'large' : 'middle'} 
-                        />
-                      </Form.Item>
-                    </Col>
-                    <Col xs={8} md={3}>
-                      <Form.Item name="sheetsPerReam" label="Sheets/Ream">
-                        <InputNumber 
-                          min={1} 
-                          style={{ width: '100%' }} 
-                          size={isMobile ? 'large' : 'middle'} 
-                        />
-                      </Form.Item>
-                    </Col>
-                    <Col xs={8} md={3}>
-                      <Form.Item name="wastagePercent" label="Wastage %">
-                        <InputNumber 
-                          min={0} 
-                          max={50} 
-                          style={{ width: '100%' }} 
-                          size={isMobile ? 'large' : 'middle'} 
-                        />
-                      </Form.Item>
-                    </Col>
-                    <Col xs={12} md={4}>
-                      <Form.Item name="ratePerKg" label="Rate/Kg (₹)">
-                        <InputNumber 
-                          min={0} 
-                          style={{ width: '100%' }} 
-                          size={isMobile ? 'large' : 'middle'} 
-                        />
-                      </Form.Item>
-                    </Col>
-                  </Row>
-                </Panel>
-
-                {/* Printing */}
-                <Panel 
-                  header={
-                    <Space>
-                      <Badge count={<PrinterOutlined style={{ color: 'hsl(var(--info))' }} />} />
-                      <Text strong>Printing Details</Text>
-                    </Space>
-                  } 
-                  key="printing"
-                >
-                  <Row gutter={[16, 0]}>
-                    <Col xs={24} md={12}>
-                      <Form.Item 
-                        name="machine" 
-                        label="Printing Machine"
-                        rules={[{ required: true, message: 'Select machine' }]}
-                      >
-                        <Select 
-                          placeholder="Select machine..." 
-                          size={isMobile ? 'large' : 'middle'}
-                          showSearch
-                          options={machines.map(m => ({ 
-                            value: m.name, 
-                            label: (
-                              <div>
-                                <div>{m.name}</div>
-                                <Text type="secondary" style={{ fontSize: 11 }}>
-                                  {m.type} • {m.colors} Colors • ₹{m.ratePerImpression}/imp
-                                </Text>
-                              </div>
-                            )
-                          }))}
-                          onChange={(val) => {
-                            const machine = machines.find(m => m.name === val);
-                            if (machine) {
-                              form.setFieldValue('ratePerImpression', machine.ratePerImpression);
-                            }
-                          }}
-                        />
-                      </Form.Item>
-                    </Col>
-                    <Col xs={24} md={12}>
-                      <Form.Item 
-                        name="printType" 
-                        label="Print Type"
-                        rules={[{ required: true, message: 'Select print type' }]}
-                      >
-                        <Select 
-                          placeholder="Select..." 
-                          size={isMobile ? 'large' : 'middle'}
-                          dropdownRender={(menu) => (
-                            <div>
-                              {menu}
-                              <Divider style={{ margin: '8px 0' }} />
-                              <div style={{ padding: '4px 12px 8px' }}>
-                                <Button 
-                                  type="dashed" 
-                                  block 
-                                  icon={<PlusOutlined />} 
-                                  onClick={() => setShowAddPrintType(true)}
-                                  size="small"
-                                >
-                                  Add Print Type
-                                </Button>
-                              </div>
-                            </div>
-                          )}
-                          options={printTypes.map(p => ({ value: p, label: p }))}
-                        />
-                      </Form.Item>
-                    </Col>
-                    <Col xs={8} md={4}>
-                      <Form.Item name="colorsFront" label="Colors - Front">
-                        <Select 
-                          options={[0,1,2,3,4,5,6,7].map(c => ({ 
-                            value: c, 
-                            label: c === 0 ? 'None' : c === 4 ? '4 (CMYK)' : `${c} Color${c>1?'s':''}`
-                          }))} 
-                          size={isMobile ? 'large' : 'middle'} 
-                        />
-                      </Form.Item>
-                    </Col>
-                    <Col xs={8} md={4}>
-                      <Form.Item name="colorsBack" label="Colors - Back">
-                        <Select 
-                          options={[0,1,2,3,4,5,6,7].map(c => ({ 
-                            value: c, 
-                            label: c === 0 ? 'None' : c === 4 ? '4 (CMYK)' : `${c} Color${c>1?'s':''}`
-                          }))} 
-                          size={isMobile ? 'large' : 'middle'} 
-                        />
-                      </Form.Item>
-                    </Col>
-                    <Col xs={8} md={4}>
-                      <Form.Item 
-                        name="impressionPerSheet" 
-                        label={
-                          <Tooltip title="Number of impressions per sheet">
-                            <Space>Imp/Sheet <InfoCircleOutlined /></Space>
-                          </Tooltip>
-                        }
-                      >
-                        <InputNumber 
-                          min={1} 
-                          style={{ width: '100%' }} 
-                          size={isMobile ? 'large' : 'middle'} 
-                        />
-                      </Form.Item>
-                    </Col>
-                    <Col xs={12} md={6}>
-                      <Form.Item name="ratePerImpression" label="Rate/Impression (₹)">
-                        <InputNumber 
-                          min={0} 
-                          step={0.01} 
-                          style={{ width: '100%' }} 
-                          size={isMobile ? 'large' : 'middle'} 
-                        />
-                      </Form.Item>
-                    </Col>
-                    <Col xs={12} md={6}>
-                      <Form.Item name="setupCost" label="Setup Cost (₹)">
-                        <InputNumber 
-                          min={0} 
-                          style={{ width: '100%' }} 
-                          size={isMobile ? 'large' : 'middle'} 
-                        />
-                      </Form.Item>
-                    </Col>
-                  </Row>
-                </Panel>
-
-                {/* Post Press */}
-                <Panel 
-                  header={
-                    <Space>
-                      <Badge count={<ToolOutlined style={{ color: 'hsl(var(--destructive))' }} />} />
-                      <Text strong>Pre-Press & Post-Press</Text>
-                    </Space>
-                  } 
-                  key="process"
-                >
-                  <Divider orientation="left" plain style={{ marginTop: 0 }}>Plate Details</Divider>
-                  
-                  <Row gutter={[16, 0]}>
-                    <Col xs={8} md={4}>
-                      <Form.Item name="platesFront" label="Plates (Front)">
-                        <InputNumber min={0} style={{ width: '100%' }} size={isMobile ? 'large' : 'middle'} />
-                      </Form.Item>
-                    </Col>
-                    <Col xs={8} md={4}>
-                      <Form.Item name="platesBack" label="Plates (Back)">
-                        <InputNumber min={0} style={{ width: '100%' }} size={isMobile ? 'large' : 'middle'} />
-                      </Form.Item>
-                    </Col>
-                    <Col xs={8} md={4}>
-                      <Form.Item name="plateCostPerPlate" label="Cost/Plate (₹)">
-                        <InputNumber min={0} style={{ width: '100%' }} size={isMobile ? 'large' : 'middle'} />
-                      </Form.Item>
-                    </Col>
-                    <Col xs={12} md={6}>
-                      <Form.Item name="designCost" label="Design Cost (₹)">
-                        <InputNumber min={0} style={{ width: '100%' }} size={isMobile ? 'large' : 'middle'} />
-                      </Form.Item>
-                    </Col>
-                  </Row>
-                  
-                  <Divider orientation="left" plain>Finishing Processes (Cost Per Job)</Divider>
-                  
-                  <Row gutter={[16, 8]}>
-                    {[
-                      { key: 'cutting', label: 'Cutting' },
-                      { key: 'folding', label: 'Folding' },
-                      { key: 'lamination', label: 'Lamination' },
-                      { key: 'binding', label: 'Binding' },
-                      { key: 'numbering', label: 'Numbering' },
-                      { key: 'perforation', label: 'Perforation' },
-                      { key: 'uv', label: 'UV Coating' },
-                      { key: 'embossing', label: 'Embossing' },
-                      { key: 'dieCutting', label: 'Die Cutting' }
-                    ].map(proc => (
-                      <React.Fragment key={proc.key}>
-                        <Col xs={12} sm={8} md={4}>
-                          <Form.Item name={proc.key} valuePropName="checked" style={{ marginBottom: 8 }}>
-                            <Checkbox>{proc.label}</Checkbox>
-                          </Form.Item>
-                        </Col>
-                        <Col xs={12} sm={4} md={4}>
-                          <Form.Item name={`${proc.key}Cost`} style={{ marginBottom: 8 }}>
-                            <InputNumber 
-                              min={0} 
-                              placeholder="₹ Cost" 
-                              style={{ width: '100%' }} 
-                              size="small" 
-                            />
-                          </Form.Item>
-                        </Col>
-                      </React.Fragment>
-                    ))}
-                  </Row>
-                </Panel>
-              </Collapse>
-
-              {/* Calculate Button */}
-              <div style={{ 
-                marginTop: 24, 
-                padding: 16, 
-                background: 'hsl(var(--muted))', 
-                borderRadius: 12,
-                textAlign: 'center'
-              }}>
-                <Button 
-                  type="primary" 
-                  size="large" 
-                  icon={<CalculatorOutlined />}
-                  onClick={recalculateAll}
-                  style={{ minWidth: 200 }}
-                >
-                  Calculate Estimate
-                </Button>
-                {isCalculated && (
-                  <Button 
-                    type="link" 
-                    icon={<ReloadOutlined />}
-                    onClick={() => {
-                      form.resetFields();
-                      setIsCalculated(false);
-                      setSummary({ paperCost: 0, printingCost: 0, processCost: 0, totalCost: 0, sellingPrice: 0, costPerUnit: 0, profitAmount: 0 });
-                      const newId = generateEstimateId ? generateEstimateId() : `EST-${Date.now()}`;
-                      setEstimateNo(newId);
-                    }}
-                    style={{ marginLeft: 12 }}
-                  >
-                    Reset
-                  </Button>
-                )}
-              </div>
-            </Form>
-          </div>
-        </Col>
-
-        {/* Summary Sidebar */}
-        <Col xs={24} lg={8}>
-          {isMobile ? (
-            isCalculated && <SummaryCard sticky={false} />
-          ) : (
-            <SummaryCard sticky={true} />
-          )}
-        </Col>
-      </Row>
-
-      {/* Add Customer Modal */}
-      <Modal 
-        title={<Space><UserOutlined /> Add New Customer</Space>}
-        open={showAddCustomer} 
-        onOk={handleAddCustomer} 
-        onCancel={() => {
-          setShowAddCustomer(false);
-          setNewCustomerName('');
-          setNewCustomerPhone('');
-          setNewCustomerEmail('');
-        }}
-        okText="Add Customer"
-        okButtonProps={{ disabled: !newCustomerName.trim() }}
-      >
-        <Space direction="vertical" style={{ width: '100%' }} size="middle">
-          <div>
-            <Text type="secondary" style={{ fontSize: 12 }}>Customer Name *</Text>
-            <Input 
-              prefix={<UserOutlined />} 
-              placeholder="Enter customer name" 
-              value={newCustomerName} 
-              onChange={e => setNewCustomerName(e.target.value)} 
-              size="large"
-              style={{ marginTop: 4 }}
-            />
-          </div>
-          <div>
-            <Text type="secondary" style={{ fontSize: 12 }}>Mobile Number *</Text>
-            <Input 
-              prefix={<PhoneOutlined />} 
-              placeholder="+91 98765 43210" 
-              value={newCustomerPhone} 
-              onChange={e => setNewCustomerPhone(e.target.value)} 
-              size="large"
-              style={{ marginTop: 4 }}
-            />
-          </div>
-          <div>
-            <Text type="secondary" style={{ fontSize: 12 }}>Email Address</Text>
-            <Input 
-              prefix={<MailOutlined />} 
-              placeholder="customer@email.com" 
-              value={newCustomerEmail} 
-              onChange={e => setNewCustomerEmail(e.target.value)} 
-              size="large"
-              style={{ marginTop: 4 }}
-            />
-          </div>
-        </Space>
-      </Modal>
-
-      {/* Add Product Type Modal */}
-      <Modal
-        title="Add New Product Type"
-        open={showAddProductType}
-        onOk={() => {
-          if (newProductType.trim()) {
-            addProductType(newProductType.trim());
-            form.setFieldValue('productType', newProductType.trim());
-            setNewProductType('');
-            setShowAddProductType(false);
-            message.success('Product type added!');
-          }
-        }}
-        onCancel={() => { setShowAddProductType(false); setNewProductType(''); }}
-        okButtonProps={{ disabled: !newProductType.trim() }}
-      >
-        <Input
-          placeholder="e.g., Visiting Card, Pamphlet"
-          value={newProductType}
-          onChange={e => setNewProductType(e.target.value)}
-          size="large"
-        />
-      </Modal>
-
-      {/* Add Paper Type Modal */}
-      <Modal
-        title="Add New Paper Type"
-        open={showAddPaperType}
-        onOk={() => {
-          if (newPaperName.trim()) {
-            addPaperType({ name: newPaperName.trim(), ratePerKg: newPaperRate, gsmRange: '60-300', stock: 'Available' });
-            form.setFieldValue('paperType', newPaperName.trim());
-            form.setFieldValue('ratePerKg', newPaperRate);
-            setNewPaperName('');
-            setNewPaperRate(80);
-            setShowAddPaperType(false);
-            message.success('Paper type added!');
-          }
-        }}
-        onCancel={() => { setShowAddPaperType(false); setNewPaperName(''); }}
-        okButtonProps={{ disabled: !newPaperName.trim() }}
-      >
-        <Space direction="vertical" style={{ width: '100%' }}>
-          <Input
-            placeholder="Paper name (e.g., Glossy Art Paper)"
-            value={newPaperName}
-            onChange={e => setNewPaperName(e.target.value)}
-            size="large"
-          />
-          <InputNumber
-            placeholder="Rate per Kg"
-            value={newPaperRate}
-            onChange={setNewPaperRate}
-            min={0}
-            style={{ width: '100%' }}
-            size="large"
-            addonBefore="₹"
-            addonAfter="/kg"
-          />
-        </Space>
-      </Modal>
-
-      {/* Add GSM Modal */}
-      <Modal
-        title="Add New GSM"
-        open={showAddGsm}
-        onOk={() => {
-          const gsmVal = parseInt(newGsm);
-          if (gsmVal > 0) {
-            addGsmOption(gsmVal);
-            form.setFieldValue('gsm', gsmVal);
-            setNewGsm('');
-            setShowAddGsm(false);
-            message.success('GSM added!');
-          }
-        }}
-        onCancel={() => { setShowAddGsm(false); setNewGsm(''); }}
-        okButtonProps={{ disabled: !newGsm || isNaN(parseInt(newGsm)) }}
-      >
-        <InputNumber
-          placeholder="e.g., 120"
-          value={newGsm}
-          onChange={setNewGsm}
-          min={1}
-          style={{ width: '100%' }}
-          size="large"
-          addonAfter="GSM"
-        />
-      </Modal>
-
-      {/* Add Print Type Modal */}
-      <Modal
-        title="Add New Print Type"
-        open={showAddPrintType}
-        onOk={() => {
-          if (newPrintType.trim()) {
-            addPrintType(newPrintType.trim());
-            form.setFieldValue('printType', newPrintType.trim());
-            setNewPrintType('');
-            setShowAddPrintType(false);
-            message.success('Print type added!');
-          }
-        }}
-        onCancel={() => { setShowAddPrintType(false); setNewPrintType(''); }}
-        okButtonProps={{ disabled: !newPrintType.trim() }}
-      >
-        <Input
-          placeholder="e.g., Front + Back (2 Color)"
-          value={newPrintType}
-          onChange={e => setNewPrintType(e.target.value)}
-          size="large"
-        />
-      </Modal>
-
-      {/* Paper Size Calculator Modal */}
-      <Modal
-        title={<Space><CalculatorOutlined /> Paper Size Calculator</Space>}
-        open={showCalculator}
-        onCancel={() => {
-          setShowCalculator(false);
-          setCalcResults(null);
-          setSelectedCalcRec(null);
-          setShowMarginsPanel(false);
-        }}
-        footer={
-          selectedCalcRec ? (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                Selected: <Text strong>{selectedCalcRec.size}</Text>
-                {' · '}{selectedCalcRec.ups} up{selectedCalcRec.ups !== 1 ? 's' : ''}
-                {' · '}<Text style={{ color: 'hsl(var(--success))' }}>{selectedCalcRec.efficiency}% eff.</Text>
-                {' · '}<Text style={{ color: 'hsl(var(--warning))' }}>{selectedCalcRec.wastePercent}% waste</Text>
-              </Text>
-              <Space>
-                <Button onClick={() => { setShowCalculator(false); setCalcResults(null); setSelectedCalcRec(null); }}>
-                  Cancel
-                </Button>
-                <Button
-                  type="primary"
-                  icon={<CheckCircleOutlined />}
-                  onClick={() => applyFromCalculator(selectedCalcRec.size, selectedCalcRec.ups)}
-                >
-                  Apply Selected Size
-                </Button>
-              </Space>
-            </div>
-          ) : (
-            <Button onClick={() => { setShowCalculator(false); setCalcResults(null); setSelectedCalcRec(null); }}>
-              Close
-            </Button>
-          )
-        }
-        width="min(92vw, 860px)"
-        styles={{ body: { padding: '16px 0 4px' } }}
-      >
-        <div>
-          <Alert 
-            message="Enter the customer's finished size. We'll find which standard paper sheet fits best with the least waste."
-            type="info"
-            showIcon
-            style={{ marginBottom: 12 }}
-          />
-
-          {/* ── Print Margins Settings ── */}
-          {(() => {
-            const MARGIN_PRESETS = [
-              {
-                key: 'standard',
-                label: 'Standard',
-                values: { bleed: 3, gutter: 3, gripperLeft: 10, gripperRight: 10, gripperTop: 0, gripperBottom: 10 },
-              },
-              {
-                key: 'tight',
-                label: 'Tight',
-                values: { bleed: 2, gutter: 2, gripperLeft: 8, gripperRight: 8, gripperTop: 0, gripperBottom: 8 },
-              },
-              {
-                key: 'loose',
-                label: 'Loose',
-                values: { bleed: 5, gutter: 5, gripperLeft: 12, gripperRight: 12, gripperTop: 0, gripperBottom: 12 },
-              },
-              {
-                key: 'booklet',
-                label: 'Booklet',
-                values: { bleed: 3, gutter: 6, gripperLeft: 10, gripperRight: 10, gripperTop: 0, gripperBottom: 10 },
-              },
-            ];
-
-            const activePreset = MARGIN_PRESETS.find(p =>
-              p.values.gripperLeft === calcMargins.gripperLeft &&
-              p.values.gripperRight === calcMargins.gripperRight &&
-              p.values.gripperBottom === calcMargins.gripperBottom
-            );
-
-            return (
-              <div style={{
-                border: '1px solid hsl(var(--border))',
-                borderRadius: 8,
-                marginBottom: 16,
-                overflow: 'hidden',
-              }}>
-                {/* Toggle header */}
-                <div
-                  onClick={() => setShowMarginsPanel(v => !v)}
-                  style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '8px 14px', cursor: 'pointer',
-                    background: showMarginsPanel ? 'hsl(var(--primary) / 0.06)' : 'hsl(var(--muted))',
-                    transition: 'background 0.15s',
-                    userSelect: 'none',
-                  }}
-                >
-                  <Space size={6}>
-                    <ToolOutlined style={{ color: 'hsl(var(--primary))' }} />
-                    <Text strong style={{ fontSize: 13 }}>Print Margins</Text>
-                    <Tag style={{ margin: 0, fontSize: 11 }}>
-                      {activePreset ? activePreset.label : 'Standard'}
-                    </Tag>
-                  </Space>
-                  <Space size={6}>
-                    <Text type="secondary" style={{ fontSize: 11 }}>
-                      {calcMargins.bleed}mm
-                    </Text>
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                      {showMarginsPanel ? '▲' : '▼'}
-                    </Text>
-                  </Space>
+            {/* 01 Job Details */}
+            <SectionCard number="01" label="Job Details" icon={FileText} color="bg-sky-50 text-sky-600"
+              open={openSections.job} onToggle={() => toggleSection('job')}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-4 mt-3">
+                <div className="sm:col-span-2">
+                  <FieldLabel required>Customer Name</FieldLabel>
+                  <CustomerCombobox value={f.customerName} onChange={v => { set('customerName', v); setErrors(e => ({ ...e, customerName: undefined })); }}
+                    customers={customers} onAddNew={() => openDlg('customer')} />
+                  {errors.customerName && <p className="text-xs text-destructive mt-1">{errors.customerName}</p>}
                 </div>
 
-                {/* Expanded panel */}
-                {showMarginsPanel && (
-                  <div style={{ padding: '12px 14px 14px', background: '#fff' }}>
-                    {/* Preset pills */}
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-                      {MARGIN_PRESETS.map(preset => {
-                        const isSelected = activePreset?.key === preset.key;
-                        return (
-                          <div
-                            key={preset.key}
-                            onClick={() => setCalcMargins({ ...preset.values })}
-                            style={{
-                              padding: '5px 16px',
-                              borderRadius: 20,
-                              cursor: 'pointer',
-                              fontSize: 12,
-                              fontWeight: isSelected ? 600 : 400,
-                              border: isSelected
-                                ? '2px solid hsl(var(--primary))'
-                                : '1.5px solid hsl(var(--border))',
-                              background: isSelected ? 'hsl(var(--primary) / 0.08)' : '#fafafa',
-                              color: isSelected ? 'hsl(var(--primary))' : 'inherit',
-                              transition: 'all 0.15s',
-                              userSelect: 'none',
-                            }}
-                          >
-                            {preset.label}
-                          </div>
-                        );
-                      })}
-                    </div>
+                <div>
+                  <FieldLabel required>Job Name / Description</FieldLabel>
+                  <Input placeholder="e.g. Annual Report 2025" value={f.jobName}
+                    onChange={e => { set('jobName', e.target.value); setErrors(er => ({ ...er, jobName: undefined })); }}
+                    className={errors.jobName ? 'border-destructive' : ''} />
+                  {errors.jobName && <p className="text-xs text-destructive mt-1">{errors.jobName}</p>}
+                </div>
 
-                    {/* Single margin value stepper */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <Text type="secondary" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>Margin (mm)</Text>
-                      <InputNumber
-                        value={calcMargins.bleed}
-                        min={1}
-                        max={20}
-                        step={0.5}
-                        size="small"
-                        style={{ width: 110 }}
-                        onChange={v => {
-                          const val = v ?? calcMargins.bleed;
-                          const base = MARGIN_PRESETS.find(p => activePreset?.key === p.key) ?? MARGIN_PRESETS[0];
-                          const ratio = base.values.bleed > 0 ? base.values.gutter / base.values.bleed : 1;
-                          setCalcMargins(m => ({
-                            ...m,
-                            bleed: val,
-                            gutter: Math.round(val * ratio * 2) / 2,
-                          }));
-                        }}
-                      />
-                      <Button
-                        size="small"
-                        type="link"
-                        style={{ padding: 0, fontSize: 11, height: 'auto' }}
-                        onClick={() => setCalcMargins({ ...DEFAULT_MARGINS })}
-                      >
-                        Reset
-                      </Button>
+                <div>
+                  <FieldLabel required>Product Type</FieldLabel>
+                  <div className="flex gap-2">
+                    <NativeSelect value={f.productType} onChange={v => { set('productType', v); setErrors(e => ({ ...e, productType: undefined })); }}
+                      placeholder="Select product…" className={cn('flex-1', errors.productType ? 'border-destructive' : '')}>
+                      {productTypes.map(p => <option key={p} value={p}>{p}</option>)}
+                    </NativeSelect>
+                    <Button type="button" variant="outline" size="icon" onClick={() => openDlg('product')}><Plus className="w-4 h-4" /></Button>
+                  </div>
+                  {errors.productType && <p className="text-xs text-destructive mt-1">{errors.productType}</p>}
+                </div>
+
+                <div>
+                  <FieldLabel required>Quantity (pcs)</FieldLabel>
+                  <NumInput value={f.quantity} onChange={v => set('quantity', v)} min={1} placeholder="1000" />
+                </div>
+
+                <div>
+                  <FieldLabel>Delivery Date</FieldLabel>
+                  <input type="date" value={f.deliveryDate} onChange={e => set('deliveryDate', e.target.value)}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2" />
+                </div>
+
+                <div>
+                  <FieldLabel>Sales Person</FieldLabel>
+                  <NativeSelect value={f.salesPerson} onChange={v => set('salesPerson', v)} placeholder="Select…">
+                    {salesPersons.map(s => <option key={s} value={s}>{s}</option>)}
+                  </NativeSelect>
+                </div>
+
+                <div>
+                  <FieldLabel hint="Optional">Remarks</FieldLabel>
+                  <Input placeholder="Special instructions…" value={f.remarks} onChange={e => set('remarks', e.target.value)} />
+                </div>
+              </div>
+            </SectionCard>
+
+            {/* 02 Paper Estimation */}
+            <SectionCard number="02" label="Paper Estimation" icon={Scissors} color="bg-amber-50 text-amber-600"
+              open={openSections.paper} onToggle={() => toggleSection('paper')}>
+              {/* Smart Size banner */}
+              <div className="mt-3 flex items-center justify-between gap-4 rounded-xl bg-primary/5 border border-primary/15 px-4 py-3">
+                <div>
+                  <p className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-primary" />Smart Size Finder
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Enter finished size — get optimal sheet with minimum wastage</p>
+                </div>
+                <button type="button" onClick={() => setShowCalculator(true)}
+                  className="shrink-0 px-4 py-2 text-sm font-semibold text-white bg-primary rounded-lg hover:bg-[hsl(202,60%,38%)] transition-colors whitespace-nowrap">
+                  Open Calculator
+                </button>
+              </div>
+
+              {sizeRecommendations?.recommendations && (
+                <div className="mt-3 rounded-xl bg-emerald-50 border border-emerald-100 px-4 py-3">
+                  <p className="text-xs font-bold uppercase tracking-widest text-emerald-700 mb-2">Smart Size Recommendations — click to apply</p>
+                  <div className="flex flex-col gap-2">
+                    {sizeRecommendations.recommendations.slice(0, 3).map((rec, i) => (
+                      <button key={rec.size} type="button"
+                        onClick={() => { set('sheetSize', rec.size); set('ups', rec.ups); set('wastagePercent', rec.wastePercent); }}
+                        className={cn(
+                          'flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border transition-colors text-left',
+                          f.sheetSize === rec.size
+                            ? 'border-emerald-400 bg-emerald-100 text-emerald-800'
+                            : i === 0
+                              ? 'border-emerald-300 bg-white text-emerald-700 hover:bg-emerald-50'
+                              : 'border-gray-200 bg-white text-foreground hover:bg-gray-50'
+                        )}>
+                        <div className="flex items-center gap-2">
+                          {i === 0 && <span className="text-[10px] font-bold uppercase tracking-widest bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">Best</span>}
+                          {f.sheetSize === rec.size && <span className="text-[10px] font-bold uppercase tracking-widest bg-primary/10 text-primary px-1.5 py-0.5 rounded">Applied</span>}
+                          <span className="text-sm font-semibold">{rec.size}</span>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0 text-xs">
+                          <span className="font-semibold">{rec.ups} up{rec.ups !== 1 ? 's' : ''}</span>
+                          <span className="text-amber-600 font-semibold">{rec.wastePercent}% waste</span>
+                          <span className="text-emerald-600 font-semibold">{rec.efficiency}% eff.</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-emerald-600 mt-2">Applies sheet size and ups</p>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-4 mt-4">
+                <div className="col-span-2">
+                  <FieldLabel required>Paper Type</FieldLabel>
+                  <div className="flex gap-2">
+                    <NativeSelect value={f.paperType} placeholder="Select paper type…"
+                      onChange={v => { const p = paperTypes.find(x => x.name === v); setF(prev => ({ ...prev, paperType: v, ratePerKg: p?.ratePerKg ?? prev.ratePerKg })); setErrors(e => ({ ...e, paperType: undefined })); }}
+                      className={cn('flex-1', errors.paperType ? 'border-destructive' : '')}>
+                      {paperTypes.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
+                    </NativeSelect>
+                    <Button type="button" variant="outline" size="icon" onClick={() => openDlg('paper')}><Plus className="w-4 h-4" /></Button>
+                  </div>
+                  {errors.paperType && <p className="text-xs text-destructive mt-1">{errors.paperType}</p>}
+                </div>
+
+                <div>
+                  <FieldLabel required>GSM</FieldLabel>
+                  <div className="flex gap-2">
+                    <NativeSelect value={f.gsm} onChange={v => set('gsm', Number(v))} className="flex-1">
+                      {gsmOptions.map(g => <option key={g} value={g}>{g} GSM</option>)}
+                    </NativeSelect>
+                    <Button type="button" variant="outline" size="icon" onClick={() => openDlg('gsm')}><Plus className="w-4 h-4" /></Button>
+                  </div>
+                </div>
+
+                <div>
+                  <FieldLabel hint={f.paperType ? `auto from paper type` : undefined}>Rate / Kg (₹)</FieldLabel>
+                  <NumInput value={f.ratePerKg} onChange={v => set('ratePerKg', v)} min={0} />
+                </div>
+
+                <div className="col-span-2">
+                  <FieldLabel required>Sheet Size</FieldLabel>
+                  <NativeSelect value={f.sheetSize} placeholder="Select sheet size…"
+                    onChange={v => { set('sheetSize', v); setErrors(e => ({ ...e, sheetSize: undefined })); }}
+                    className={errors.sheetSize ? 'border-destructive' : ''}>
+                    {sheetSizeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </NativeSelect>
+                  {errors.sheetSize && <p className="text-xs text-destructive mt-1">{errors.sheetSize}</p>}
+                </div>
+
+                <div>
+                  <FieldLabel hint="per sheet">Ups</FieldLabel>
+                  <NumInput value={f.ups} onChange={v => set('ups', v)} min={1} max={100} />
+                </div>
+
+                <div>
+                  <FieldLabel>Sheets / Ream</FieldLabel>
+                  <NumInput value={f.sheetsPerReam} onChange={v => set('sheetsPerReam', v)} min={1} />
+                </div>
+
+                <div>
+                  <FieldLabel hint="margin area — info only">Area Waste %</FieldLabel>
+                  <NumInput value={f.wastagePercent} onChange={v => set('wastagePercent', v)} min={0} max={50} />
+                </div>
+              </div>
+
+              {/* Paper computation stats strip */}
+              {summary.weightPerSheet_g > 0 && (
+                <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {[
+                    { label: 'Weight / Sheet', value: `${summary.weightPerSheet_g} g`, hint: 'per sheet' },
+                    { label: 'Weight / Ream',  value: `${summary.weightPerRam_kg} kg`, hint: `${f.sheetsPerReam || 500} sheets` },
+                    { label: 'Price / Ream',   value: formatCurrency(summary.pricePerRam), hint: 'at ₹' + (f.ratePerKg || 0) + '/kg' },
+                    { label: 'Total Reams',    value: summary.totalReams, hint: `${summary.totalSheets.toLocaleString()} sheets` },
+                  ].map(stat => (
+                    <div key={stat.label} className="rounded-xl bg-amber-50/60 border border-amber-100 px-4 py-3">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-amber-700/70 leading-none">{stat.label}</p>
+                      <p className="text-base font-bold text-foreground tabular-nums mt-1 leading-none">{stat.value}</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">{stat.hint}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </SectionCard>
+
+            {/* 03 Printing Details */}
+            <SectionCard number="03" label="Printing Details" icon={Printer} color="bg-violet-50 text-violet-600"
+              open={openSections.printing} onToggle={() => toggleSection('printing')}>
+
+              {/* Sheets / Prints */}
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Sheets</p>
+                  <p className="text-2xl font-bold tabular-nums mt-1">{summary.totalSheets > 0 ? summary.totalSheets.toLocaleString() : '—'}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">going through press</p>
+                </div>
+                <div className="rounded-xl bg-violet-50 border border-violet-200 px-4 py-3">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-violet-500">Prints</p>
+                  <p className="text-2xl font-bold text-violet-700 tabular-nums mt-1">
+                    {f.quantity > 0 ? Number(f.quantity).toLocaleString() : '—'}
+                  </p>
+                  <p className="text-xs text-violet-400 mt-0.5">client's order qty</p>
+                </div>
+              </div>
+
+              {/* Print Type */}
+              <div className="mt-4">
+                <p className="text-sm font-semibold text-foreground mb-2">Print Type</p>
+                <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1 gap-1">
+                  {['Single Side', 'Both Side'].map(opt => (
+                    <button key={opt} type="button" onClick={() => set('printType', opt)}
+                      className={cn(
+                        'px-4 py-1.5 rounded-md text-sm font-semibold transition-all',
+                        f.printType === opt
+                          ? 'bg-white shadow-sm text-violet-700 border border-violet-200'
+                          : 'text-muted-foreground hover:text-foreground',
+                      )}>
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Cut Job */}
+              <div className="mt-4 flex items-center justify-between py-1">
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Cut Job</p>
+                  <p className="text-xs text-muted-foreground">Each sheet is cut into 2 pieces</p>
+                </div>
+                <button type="button" onClick={() => set('isCut', !f.isCut)}
+                  className={cn(
+                    'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors',
+                    f.isCut ? 'bg-violet-500' : 'bg-gray-200',
+                  )}>
+                  <span className={cn(
+                    'pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform',
+                    f.isCut ? 'translate-x-5' : 'translate-x-0',
+                  )} />
+                </button>
+              </div>
+
+              {/* Impressions result */}
+              {summary.totalSheets > 0 && (
+                <div className="mt-4 flex items-center justify-between rounded-lg bg-violet-600 px-4 py-3">
+                  <span className="text-sm font-semibold text-violet-100">Total Impressions</span>
+                  <span className="text-xl font-bold text-white tabular-nums">{summary.impressions.toLocaleString()}</span>
+                </div>
+              )}
+
+              {/* Rate Inputs */}
+              <div className="grid grid-cols-2 gap-4 mt-4">
+                <div>
+                  <FieldLabel>Rate / Impression (₹)</FieldLabel>
+                  <NumInput value={f.ratePerImpression} onChange={v => set('ratePerImpression', v)} min={0} step={0.01} />
+                </div>
+                <div>
+                  <FieldLabel>Setup Cost (₹)</FieldLabel>
+                  <NumInput value={f.setupCost} onChange={v => set('setupCost', v)} min={0} />
+                </div>
+              </div>
+            </SectionCard>
+
+            {/* 04 Pre-Press & Finishing */}
+            <SectionCard number="04" label="Pre-Press & Finishing" icon={Layers} color="bg-rose-50 text-rose-600"
+              open={openSections.process} onToggle={() => toggleSection('process')}>
+              <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mt-3 mb-3">Plate Details</p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-4">
+                <div><FieldLabel>Plates — Front</FieldLabel><NumInput value={f.platesFront} onChange={v => set('platesFront', v)} min={0} /></div>
+                <div><FieldLabel>Plates — Back</FieldLabel><NumInput value={f.platesBack} onChange={v => set('platesBack', v)} min={0} /></div>
+                <div><FieldLabel>Cost / Plate (₹)</FieldLabel><NumInput value={f.plateCostPerPlate} onChange={v => set('plateCostPerPlate', v)} min={0} /></div>
+                <div><FieldLabel>Design Cost (₹)</FieldLabel><NumInput value={f.designCost} onChange={v => set('designCost', v)} min={0} /></div>
+              </div>
+
+              <div className="mt-5">
+                <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-3">
+                  Finishing Processes
+                  <span className="ml-2 normal-case font-normal">— toggle to include, enter cost per job</span>
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {finishingProcesses.map(proc => (
+                    <ProcessToggle key={proc.key} label={proc.label} checked={!!f[proc.key]} cost={f[`${proc.key}Cost`]}
+                      onToggle={() => set(proc.key, !f[proc.key])} onCostChange={v => set(`${proc.key}Cost`, v)} />
+                  ))}
+                </div>
+              </div>
+            </SectionCard>
+
+            {/* Reset */}
+            <div className="flex justify-end pb-4">
+              <button type="button" onClick={handleReset}
+                className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors py-2">
+                <RotateCcw className="w-3.5 h-3.5" />Reset form
+              </button>
+            </div>
+          </div>
+
+          {/* ═══ Summary column ═══ */}
+          <div className="w-full lg:w-80 xl:w-88 shrink-0">
+            <div className="sticky top-6 space-y-4">
+
+              {/* Estimate badge */}
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-4 flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Estimate No.</p>
+                  <p className="text-base font-bold text-primary mt-0.5">{estimateNo || '—'}</p>
+                </div>
+                <div className="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-full text-xs font-bold">
+                  <Check className="w-3 h-3" />Live
+                </div>
+              </div>
+
+              {/* Cost panel */}
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-5">
+                <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-4">Cost Breakdown</p>
+
+                {/* Stacked bar */}
+                <div className="mb-4">
+                  <div className="flex rounded-full overflow-hidden h-2.5 bg-gray-100">
+                    <div className="bg-sky-400 transition-all duration-500" style={{ width: `${paperPct}%` }} />
+                    <div className="bg-violet-400 transition-all duration-500" style={{ width: `${printPct}%` }} />
+                    <div className="bg-rose-400 transition-all duration-500" style={{ width: `${procPct}%` }} />
+                  </div>
+                  <div className="flex gap-3 mt-2">
+                    {[['Sky','Paper',paperPct],['Violet','Print',printPct],['Rose','Process',procPct]].map(([c,l,p]) => (
+                      <span key={l} className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <span className={`w-2 h-2 rounded-full bg-${c.toLowerCase()}-400 inline-block`} />
+                        {l} {p}%
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-2.5">
+                  {[
+                    { label: 'Paper', color: 'bg-sky-400', val: summary.paperCost },
+                    { label: 'Printing', color: 'bg-violet-400', val: summary.printingCost },
+                    { label: 'Process', color: 'bg-rose-400', val: summary.processCost },
+                  ].map(row => (
+                    <div key={row.label} className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground flex items-center gap-1.5">
+                        <span className={cn('w-2 h-2 rounded-full shrink-0', row.color)} />{row.label}
+                      </span>
+                      <span className="text-sm font-semibold tabular-nums">{formatCurrency(row.val)}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <Separator className="my-4" />
+
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-bold">Total Cost</span>
+                  <span className="text-base font-bold tabular-nums">{formatCurrency(summary.totalCost)}</span>
+                </div>
+
+                <Separator className="my-4" />
+
+                {/* Profit */}
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm text-muted-foreground">Profit %</span>
+                    <div className="relative w-24">
+                      <NumInput value={profitPercent} onChange={v => setProfitPercent(v === '' ? 0 : Number(v))} min={0} max={100} className="h-8 pr-7 text-sm text-right" />
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">%</span>
                     </div>
                   </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">Profit Amount</span>
+                    <span className="text-sm font-semibold text-emerald-600 tabular-nums">{formatCurrency(summary.profitAmount)}</span>
+                  </div>
+                </div>
+
+                <Separator className="my-4" />
+
+                {/* Selling price hero */}
+                <div className="rounded-xl bg-linear-to-br from-emerald-50 to-teal-50 border border-emerald-100 px-4 py-4 text-center">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-600 mb-1">Selling Price</p>
+                  <p className="text-3xl font-bold text-emerald-700 tabular-nums leading-none">{formatCurrency(summary.sellingPrice)}</p>
+                  <div className="mt-2.5 inline-flex items-center gap-1 bg-white/80 rounded-full px-3 py-1 text-xs font-semibold text-emerald-700">
+                    <TrendingUp className="w-3 h-3" />Per unit: {formatCurrency(summary.costPerUnit)}
+                  </div>
+                </div>
+
+                {/* Stats */}
+                {summary.totalSheets > 0 && (
+                  <>
+                    <Separator className="my-4" />
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        ['Total Sheets', summary.totalSheets?.toLocaleString()],
+                        ['Total Reams', summary.totalReams],
+                        ['Paper Weight', `${summary.paperWeight} kg`],
+                        ['Impressions', summary.impressions?.toLocaleString()],
+                        ...(summary.totalPlates > 0 ? [['Plates', `${summary.totalPlates}`]] : []),
+                      ].map(([label, val]) => (
+                        <div key={label} className="rounded-lg bg-gray-50 px-3 py-2">
+                          <p className="text-[11px] text-muted-foreground">{label}</p>
+                          <p className="text-sm font-semibold mt-0.5 tabular-nums">{val}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </>
                 )}
               </div>
-            );
-          })()}
 
-          {/* Input row */}
-          <Row gutter={[12, 12]} align="bottom">
-            <Col xs={11} sm={6}>
-              <Text type="secondary" style={{ fontSize: 12 }}>Width</Text>
-              <InputNumber
-                value={calcWidth}
-                onChange={setCalcWidth}
-                placeholder="5.5"
-                style={{ width: '100%', marginTop: 4 }}
-                size="large"
-                min={0}
-                step={0.1}
-              />
-            </Col>
-            <Col xs={11} sm={6}>
-              <Text type="secondary" style={{ fontSize: 12 }}>Height</Text>
-              <InputNumber
-                value={calcHeight}
-                onChange={setCalcHeight}
-                placeholder="8.5"
-                style={{ width: '100%', marginTop: 4 }}
-                size="large"
-                min={0}
-                step={0.1}
-              />
-            </Col>
-            <Col xs={8} sm={5}>
-              <Text type="secondary" style={{ fontSize: 12 }}>Unit</Text>
-              <Select
-                value={calcUnit}
-                onChange={setCalcUnit}
-                style={{ width: '100%', marginTop: 4 }}
-                size="large"
-                options={[
-                  { value: 'inch', label: 'Inch' },
-                  { value: 'mm', label: 'mm' },
-                  { value: 'cm', label: 'cm' }
-                ]}
-              />
-            </Col>
-            <Col xs={16} sm={7}>
-              <Button 
-                type="primary" 
-                size="large" 
-                block 
-                icon={<CalculatorOutlined />}
-                onClick={handleCalculate}
-                style={{ marginTop: 20 }}
-              >
-                Find Best Size
+              {/* Save button */}
+              <Button onClick={handleSave} className="w-full gap-2" size="lg">
+                <Save className="w-4 h-4" />Save Estimate
               </Button>
-            </Col>
-          </Row>
-
-          {/* Customer size info bar */}
-          {calcResults?.customerSize && (
-            <Card size="small" style={{ background: 'hsl(var(--muted))', marginTop: 16, marginBottom: 0 }}>
-              <Text type="secondary">Finished size: </Text>
-              <Text strong>
-                {calcResults.customerSize.width} × {calcResults.customerSize.height} mm
-              </Text>
-              <Text type="secondary"> ({calcResults.customerSize.inInches})</Text>
-            </Card>
-          )}
-
-          {/* Recommendations + Visualizer */}
-          {calcResults?.recommendations && (
-            <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-              {/* Recommendations list */}
-              <Col xs={24} md={14}>
-                <Text strong style={{ marginBottom: 10, display: 'block' }}>
-                  Recommendations — click a card to preview:
-                </Text>
-                <Space direction="vertical" style={{ width: '100%' }} size={8}>
-                  {calcResults.recommendations.map((rec, i) => (
-                    <Card 
-                      key={rec.size} 
-                      size="small" 
-                      hoverable
-                      style={{ 
-                        cursor: 'pointer',
-                        border: selectedCalcRec?.size === rec.size 
-                          ? '2px solid hsl(var(--primary))' 
-                          : i === 0 
-                            ? '1.5px solid hsl(var(--success))' 
-                            : '1px solid hsl(var(--border))',
-                        background: selectedCalcRec?.size === rec.size 
-                          ? 'hsl(var(--primary) / 0.06)'
-                          : i === 0 
-                            ? 'hsl(var(--success) / 0.04)' 
-                            : 'transparent',
-                        transition: 'border-color 0.15s, background 0.15s',
-                      }}
-                      onClick={() => setSelectedCalcRec(rec)}
-                    >
-                      <Row justify="space-between" align="middle" wrap={false}>
-                        <Col flex="auto" style={{ minWidth: 0 }}>
-                          <Space size={6} wrap>
-                            {i === 0 && <Tag color="success" style={{ margin: 0 }}>Best</Tag>}
-                            {selectedCalcRec?.size === rec.size && (
-                              <Tag color="blue" style={{ margin: 0 }}>Selected</Tag>
-                            )}
-                            <Text strong style={{ fontSize: 15 }}>{rec.size}</Text>
-                          </Space>
-                          <div>
-                            <Text type="secondary" style={{ fontSize: 11 }}>
-                              {rec.dimensions} · {rec.dimensionsInch}
-                            </Text>
-                          </div>
-                          {rec.layout && (
-                            <div>
-                              <Text type="secondary" style={{ fontSize: 11 }}>
-                                {rec.layout.orientation} · {rec.layout.cols}×{rec.layout.rows} grid
-                              </Text>
-                            </div>
-                          )}
-                        </Col>
-                        <Col style={{ flexShrink: 0, paddingLeft: 12 }}>
-                          <Row gutter={12} wrap={false}>
-                            <Col style={{ textAlign: 'center' }}>
-                              <div style={{ fontSize: 17, fontWeight: 700, lineHeight: 1.2 }}>{rec.ups}</div>
-                              <Text type="secondary" style={{ fontSize: 10 }}>UPS</Text>
-                            </Col>
-                            <Col style={{ textAlign: 'center' }}>
-                              <div style={{ fontSize: 17, fontWeight: 700, lineHeight: 1.2, color: 'hsl(var(--success))' }}>
-                                {rec.efficiency}%
-                              </div>
-                              <Text type="secondary" style={{ fontSize: 10 }}>Eff.</Text>
-                            </Col>
-                            <Col style={{ textAlign: 'center' }}>
-                              <div style={{ fontSize: 17, fontWeight: 700, lineHeight: 1.2, color: 'hsl(var(--warning))' }}>
-                                {rec.wastePercent}%
-                              </div>
-                              <Text type="secondary" style={{ fontSize: 10 }}>Waste</Text>
-                            </Col>
-                          </Row>
-                        </Col>
-                      </Row>
-                    </Card>
-                  ))}
-                </Space>
-              </Col>
-
-              {/* Visualizer */}
-              <Col xs={24} md={10}>
-                <Text strong style={{ marginBottom: 10, display: 'block' }}>Layout Preview:</Text>
-                {selectedCalcRec ? (
-                  <PaperLayoutVisualizer
-                    sheetWidth={STANDARD_SIZES.find(s => s.name === selectedCalcRec.size)?.width || 210}
-                    sheetHeight={STANDARD_SIZES.find(s => s.name === selectedCalcRec.size)?.height || 297}
-                    gridLayout={selectedCalcRec.gridLayout}
-                    itemWidth={selectedCalcRec.layout?.itemWidth || 0}
-                    itemHeight={selectedCalcRec.layout?.itemHeight || 0}
-                    ups={selectedCalcRec.ups}
-                    wastePercent={selectedCalcRec.wastePercent}
-                  />
-                ) : (
-                  <div style={{
-                    height: 160, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    background: 'hsl(var(--muted))', borderRadius: 12,
-                    color: 'hsl(var(--muted-foreground))', fontSize: 13
-                  }}>
-                    Select a recommendation to preview
-                  </div>
-                )}
-              </Col>
-            </Row>
-          )}
-
-          {calcResults?.error && (
-            <Alert 
-              type="warning" 
-              message={calcResults.error} 
-              showIcon
-              style={{ marginTop: 16 }}
-            />
-          )}
+            </div>
+          </div>
         </div>
-      </Modal>
+      </div>
+
+      {/* ═══ Dialogs ═══ */}
+
+      <Dialog open={dlg.customer} onOpenChange={o => { if (!o) closeDlg('customer'); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Add New Customer</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-2">
+            <div><FieldLabel required>Customer Name</FieldLabel>
+              <Input placeholder="Company or person name" value={newCustomer.name} onChange={e => setNewCustomer(c => ({ ...c, name: e.target.value }))} /></div>
+            <div><FieldLabel>Mobile Number</FieldLabel>
+              <div className="relative"><Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                <Input className="pl-9" placeholder="+91 98765 43210" value={newCustomer.phone} onChange={e => setNewCustomer(c => ({ ...c, phone: e.target.value }))} /></div></div>
+            <div><FieldLabel>Email Address</FieldLabel>
+              <div className="relative"><Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                <Input className="pl-9" placeholder="customer@email.com" value={newCustomer.email} onChange={e => setNewCustomer(c => ({ ...c, email: e.target.value }))} /></div></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => closeDlg('customer')}>Cancel</Button>
+            <Button disabled={!newCustomer.name.trim()} onClick={async () => {
+              try {
+                const nc = await addCustomer(newCustomer);
+                set('customerName', nc.name);
+              } catch (e) {
+                console.error('Failed to add customer', e);
+              }
+              setNewCustomer({ name: '', phone: '', email: '' }); closeDlg('customer');
+            }}>Add Customer</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={dlg.product} onOpenChange={o => { if (!o) closeDlg('product'); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader><DialogTitle>Add Product Type</DialogTitle></DialogHeader>
+          <div className="py-2"><FieldLabel required>Name</FieldLabel>
+            <Input placeholder="e.g. Carry Bag" value={newProductType} onChange={e => setNewProductType(e.target.value)} /></div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => closeDlg('product')}>Cancel</Button>
+            <Button disabled={!newProductType.trim()} onClick={() => { addProductType(newProductType.trim()); set('productType', newProductType.trim()); setNewProductType(''); closeDlg('product'); }}>Add</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={dlg.paper} onOpenChange={o => { if (!o) closeDlg('paper'); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader><DialogTitle>Add Paper Type</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-2">
+            <div><FieldLabel required>Paper Name</FieldLabel><Input placeholder="e.g. Glossy Art Paper" value={newPaperName} onChange={e => setNewPaperName(e.target.value)} /></div>
+            <div><FieldLabel required>Rate / Kg (₹)</FieldLabel><NumInput value={newPaperRate} onChange={setNewPaperRate} min={0} placeholder="80" /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => closeDlg('paper')}>Cancel</Button>
+            <Button disabled={!newPaperName.trim()} onClick={() => {
+              addPaperType({ name: newPaperName.trim(), ratePerKg: newPaperRate, gsmRange: '60-300', stock: 'Available' });
+              setF(prev => ({ ...prev, paperType: newPaperName.trim(), ratePerKg: newPaperRate }));
+              setNewPaperName(''); setNewPaperRate(80); closeDlg('paper');
+            }}>Add</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={dlg.gsm} onOpenChange={o => { if (!o) closeDlg('gsm'); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader><DialogTitle>Add GSM Option</DialogTitle></DialogHeader>
+          <div className="py-2"><FieldLabel required>GSM Value</FieldLabel><NumInput value={newGsm} onChange={setNewGsm} min={1} placeholder="e.g. 120" /></div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => closeDlg('gsm')}>Cancel</Button>
+            <Button disabled={!newGsm || isNaN(parseInt(newGsm))} onClick={() => {
+              const g = parseInt(newGsm); addGsmOption(g); set('gsm', g); setNewGsm(''); closeDlg('gsm');
+            }}>Add</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+
+      <PaperSizeCalculatorModal
+        open={showCalculator} onClose={() => setShowCalculator(false)}
+        onApply={applyFromCalculator} calcMargins={calcMargins} setCalcMargins={setCalcMargins}
+      />
     </div>
   );
 };
 
 export default CreateEstimate;
-

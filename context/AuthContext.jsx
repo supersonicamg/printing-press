@@ -1,6 +1,7 @@
 'use client';
 
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { createClient } from '../lib/supabase/client';
 
 // Role definitions with permissions
 export const ROLES = {
@@ -54,62 +55,104 @@ export const PERMISSIONS = {
   }
 };
 
-// Mock users for demo
-const MOCK_USERS = {
-  admin: {
-    id: 1,
-    name: 'John Anderson',
-    email: 'john@printpress.com',
-    role: ROLES.ADMIN,
-    avatar: null
-  },
-  estimator: {
-    id: 2,
-    name: 'Sarah Mitchell',
-    email: 'sarah@printpress.com',
-    role: ROLES.ESTIMATOR,
-    avatar: null
-  },
-  sales: {
-    id: 3,
-    name: 'Mike Roberts',
-    email: 'mike@printpress.com',
-    role: ROLES.SALES,
-    avatar: null
-  },
-  viewer: {
-    id: 4,
-    name: 'Emily Chen',
-    email: 'emily@printpress.com',
-    role: ROLES.VIEWER,
-    avatar: null
-  }
-};
-
 const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
-  // Default to admin for demo purposes
-  const [currentUser, setCurrentUser] = useState(MOCK_USERS.admin);
+  const supabase = createClient();
+  const [currentUser, setCurrentUser] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  const switchUser = (userType) => {
-    setCurrentUser(MOCK_USERS[userType]);
+  useEffect(() => {
+    // Get initial session
+    const initSession = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await fetchProfile(user);
+      }
+      setLoading(false);
+    };
+
+    initSession();
+
+    // Listen for auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session?.user) {
+        await fetchProfile(session.user);
+      } else {
+        setCurrentUser(null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const fetchProfile = async (user) => {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .single();
+
+    if (profile) {
+      setCurrentUser({
+        id: profile.id,
+        name: profile.name,
+        email: profile.email,
+        role: profile.role,
+        avatar: profile.avatar_url
+      });
+    }
+  };
+
+  const signIn = async (email, password) => {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    return data;
+  };
+
+  const signUp = async (email, password, name, role = 'VIEWER') => {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { name, role } }
+    });
+    if (error) throw error;
+    return data;
+  };
+
+  const signOut = async () => {
+    await supabase.auth.signOut();
+    setCurrentUser(null);
+  };
+
+  const updateProfile = async (updates) => {
+    if (!currentUser) return;
+    const { error } = await supabase
+      .from('profiles')
+      .update(updates)
+      .eq('id', currentUser.id);
+    if (error) throw error;
+    setCurrentUser(prev => ({ ...prev, ...updates }));
   };
 
   const hasPermission = (permission) => {
+    if (!currentUser) return false;
     return PERMISSIONS[currentUser.role]?.[permission] ?? false;
   };
 
   const isRole = (role) => {
-    return currentUser.role === role;
+    return currentUser?.role === role;
   };
 
   const value = {
     currentUser,
-    switchUser,
+    loading,
+    signIn,
+    signUp,
+    signOut,
+    updateProfile,
     hasPermission,
     isRole,
-    allUsers: MOCK_USERS,
     ROLES,
     PERMISSIONS
   };

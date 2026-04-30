@@ -1,34 +1,34 @@
 'use client';
 
 import React from 'react';
-import { Layout, Button, Dropdown, Avatar, Tag, Space, Breadcrumb, Select, Typography } from 'antd';
+import { Layout, Button, Dropdown, Avatar, Tag, Space, Breadcrumb, Typography } from 'antd';
 import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   UserOutlined,
   LogoutOutlined,
   SettingOutlined,
-  BellOutlined,
-  SwapOutlined
+  BellOutlined
 } from '@ant-design/icons';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth, ROLES } from '../../context/AuthContext';
 
 const { Header } = Layout;
 const { Text } = Typography;
 
-// Role colors
-const ROLE_COLORS = {
-  [ROLES.ADMIN]: { bg: '#ff4d4f', text: 'Admin' },
-  [ROLES.ESTIMATOR]: { bg: '#1890ff', text: 'Estimator' },
-  [ROLES.SALES]: { bg: '#52c41a', text: 'Sales' },
-  [ROLES.VIEWER]: { bg: '#8c8c8c', text: 'Viewer' }
-};
-
 const AppHeader = ({ collapsed, onToggle, isMobile }) => {
   const pathname = usePathname();
-  const { currentUser, switchUser, allUsers } = useAuth();
+  const router = useRouter();
+  const { currentUser, signOut } = useAuth();
+
+  // Role colors
+  const ROLE_COLORS = {
+    [ROLES.ADMIN]: { bg: '#ff4d4f', text: 'Admin' },
+    [ROLES.ESTIMATOR]: { bg: '#1890ff', text: 'Estimator' },
+    [ROLES.SALES]: { bg: '#52c41a', text: 'Sales' },
+    [ROLES.VIEWER]: { bg: '#8c8c8c', text: 'Viewer' }
+  };
 
   // Generate breadcrumb items from path
   const getBreadcrumbItems = () => {
@@ -51,6 +51,19 @@ const AppHeader = ({ collapsed, onToggle, isMobile }) => {
     return items;
   };
 
+  const roleColor = ROLE_COLORS[currentUser?.role] ?? { bg: '#8c8c8c', text: 'User' };
+
+  const handleMenuClick = async ({ key }) => {
+    if (key === 'logout') {
+      await signOut();
+      router.push('/login');
+    } else if (key === 'profile') {
+      router.push('/profile');
+    } else if (key === 'settings') {
+      router.push('/settings');
+    }
+  };
+
   // Profile dropdown menu
   const profileMenuItems = [
     {
@@ -71,21 +84,6 @@ const AppHeader = ({ collapsed, onToggle, isMobile }) => {
       danger: true
     }
   ];
-
-  // Role switch options (for demo)
-  const roleSwitchOptions = Object.entries(allUsers).map(([key, user]) => ({
-    value: key,
-    label: (
-      <Space>
-        <Tag color={ROLE_COLORS[user.role].bg} style={{ margin: 0 }}>
-          {ROLE_COLORS[user.role].text}
-        </Tag>
-        {user.name}
-      </Space>
-    )
-  }));
-
-  const roleColor = ROLE_COLORS[currentUser.role];
 
   return (
     <Header
@@ -118,20 +116,7 @@ const AppHeader = ({ collapsed, onToggle, isMobile }) => {
 
       {/* Right Section */}
       <Space size={isMobile ? 'small' : 'middle'}>
-        {/* Role Switcher (Demo Only) */}
-        {!isMobile && (
-          <Select
-            value={Object.keys(allUsers).find(key => allUsers[key].id === currentUser.id)}
-            onChange={switchUser}
-            options={roleSwitchOptions}
-            style={{ minWidth: 180 }}
-            suffixIcon={<SwapOutlined />}
-            size="small"
-            dropdownStyle={{ minWidth: 220 }}
-          />
-        )}
-
-        {/* Notifications */}
+          {/* Notifications */}
         <Button
           type="text"
           icon={<BellOutlined style={{ fontSize: 18 }} />}
@@ -152,7 +137,7 @@ const AppHeader = ({ collapsed, onToggle, isMobile }) => {
 
         {/* User Profile */}
         <Dropdown
-          menu={{ items: profileMenuItems }}
+          menu={{ items: profileMenuItems, onClick: handleMenuClick }}
           trigger={['click']}
           placement="bottomRight"
         >
@@ -172,7 +157,7 @@ const AppHeader = ({ collapsed, onToggle, isMobile }) => {
               }}
               icon={<UserOutlined />}
             />
-            {!isMobile && (
+            {!isMobile && currentUser && (
               <div style={{ lineHeight: 1.3 }}>
                 <Text strong style={{ display: 'block', fontSize: 13 }}>
                   {currentUser.name}

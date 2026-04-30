@@ -83,6 +83,7 @@ export const sheetSizes = [
   // 'Legal',
   // 'Tabloid',
  
+  '15x30',
   '18x24',
   '18x25',
   '20x30',

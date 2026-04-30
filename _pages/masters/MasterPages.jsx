@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { Card, Table, Button, Modal, Form, Input, InputNumber, Select, Space, Tag, Typography, Row, Col, message, Grid } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined } from '@ant-design/icons';
-import { paperTypes, machines, inks, processes } from '../../data/mockData';
+import { useMasterData } from '../../context/MasterDataContext';
 
 const { Title, Text } = Typography;
 const { useBreakpoint } = Grid;
@@ -15,11 +15,22 @@ const MasterPage = ({ type }) => {
   const [searchText, setSearchText] = useState('');
   const [form] = Form.useForm();
 
+  const {
+    paperTypes, machines, inks, processes,
+    addPaperType, addMachine, addInk, addProcess,
+    updatePaperType, updateMachine, updateInk, updateProcess,
+    deletePaperType, deleteMachine, deleteInk, deleteProcess,
+  } = useMasterData();
+
+  const currentData = { paper: paperTypes, machine: machines, ink: inks, process: processes };
+  const addFn = { paper: addPaperType, machine: addMachine, ink: addInk, process: addProcess };
+  const updateFn = { paper: updatePaperType, machine: updateMachine, ink: updateInk, process: updateProcess };
+  const deleteFn = { paper: deletePaperType, machine: deleteMachine, ink: deleteInk, process: deleteProcess };
+
   const configs = {
     paper: {
       title: 'Paper Master',
       description: 'Manage paper types, GSM, and pricing',
-      data: paperTypes,
       columns: [
         { title: 'Name', dataIndex: 'name', key: 'name', ellipsis: true },
         { title: 'GSM Range', dataIndex: 'gsmRange', key: 'gsmRange', responsive: ['md'] },
@@ -36,7 +47,6 @@ const MasterPage = ({ type }) => {
     machine: {
       title: 'Machine Master',
       description: 'Manage printing machines and rates',
-      data: machines,
       columns: [
         { title: 'Name', dataIndex: 'name', key: 'name', ellipsis: true },
         { title: 'Type', dataIndex: 'type', key: 'type', responsive: ['sm'] },
@@ -55,7 +65,6 @@ const MasterPage = ({ type }) => {
     ink: {
       title: 'Ink Master',
       description: 'Manage ink types and costs',
-      data: inks,
       columns: [
         { title: 'Name', dataIndex: 'name', key: 'name', ellipsis: true },
         { title: 'Type', dataIndex: 'type', key: 'type', responsive: ['sm'] },
@@ -72,7 +81,6 @@ const MasterPage = ({ type }) => {
     process: {
       title: 'Process Master',
       description: 'Manage finishing processes and pricing',
-      data: processes,
       columns: [
         { title: 'Name', dataIndex: 'name', key: 'name', ellipsis: true },
         { title: 'Type', dataIndex: 'type', key: 'type', responsive: ['sm'] },
@@ -93,7 +101,7 @@ const MasterPage = ({ type }) => {
   const config = configs[type];
 
   // Filter data based on search
-  const filteredData = config.data.filter(item => 
+  const filteredData = (currentData[type] || []).filter(item =>
     item.name?.toLowerCase().includes(searchText.toLowerCase())
   );
 
@@ -110,7 +118,12 @@ const MasterPage = ({ type }) => {
   };
 
   const handleSave = () => {
-    form.validateFields().then(() => {
+    form.validateFields().then((values) => {
+      if (editingItem) {
+        updateFn[type](editingItem.id, values);
+      } else {
+        addFn[type](values);
+      }
       message.success(editingItem ? 'Item updated successfully!' : 'Item added successfully!');
       setIsModalOpen(false);
     });
@@ -122,7 +135,10 @@ const MasterPage = ({ type }) => {
       content: `Are you sure you want to delete "${record.name}"?`,
       okText: 'Delete',
       okType: 'danger',
-      onOk: () => message.success('Item deleted successfully!')
+      onOk: () => {
+        deleteFn[type](record.id);
+        message.success('Item deleted successfully!');
+      }
     });
   };
 

@@ -1,6 +1,6 @@
 'use client';
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { paperTypes as defaultPaperTypes, machines as defaultMachines, inks as defaultInks, processes as defaultProcesses, productTypes as defaultProductTypes, gsmOptions as defaultGsmOptions, printTypes as defaultPrintTypes } from '../data/mockData';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createClient } from '../lib/supabase/client';
 
 const MasterDataContext = createContext(null);
 
@@ -13,164 +13,247 @@ export const useMasterData = () => {
 };
 
 export const MasterDataProvider = ({ children }) => {
-  // Paper Types
-  const [paperTypes, setPaperTypes] = useState(() => {
-    const saved = typeof window !== "undefined" ? localStorage.getItem('printmaster_paper_types') : null;
-    return saved ? JSON.parse(saved) : defaultPaperTypes;
+  const supabase = createClient();
+
+  const [paperTypes, setPaperTypes] = useState([]);
+  const [machines, setMachines] = useState([]);
+  const [inks, setInks] = useState([]);
+  const [processes, setProcesses] = useState([]);
+  const [productTypes, setProductTypes] = useState([]);
+  const [gsmOptions, setGsmOptions] = useState([]);
+  const [printTypes, setPrintTypes] = useState([]);
+  const [customers, setCustomers] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // Convert snake_case DB row to camelCase for app compatibility
+  const toCamelPaperType = (row) => ({
+    id: row.id, name: row.name, gsmRange: row.gsm_range,
+    ratePerKg: row.rate_per_kg, stock: row.stock
+  });
+  const toCamelMachine = (row) => ({
+    id: row.id, name: row.name, type: row.type, maxSize: row.max_size,
+    colors: row.colors, speedPerHour: row.speed_per_hour, ratePerImpression: row.rate_per_impression
+  });
+  const toCamelInk = (row) => ({
+    id: row.id, name: row.name, type: row.type, brand: row.brand,
+    ratePerKg: row.rate_per_kg, coverage: row.coverage
+  });
+  const toCamelProcess = (row) => ({
+    id: row.id, name: row.name, type: row.type, rateType: row.rate_type,
+    rate: row.rate, minCharge: row.min_charge
+  });
+  const toCamelCustomer = (row) => ({
+    id: row.id, name: row.name, phone: row.phone, email: row.email
   });
 
-  // Machines
-  const [machines, setMachines] = useState(() => {
-    const saved = typeof window !== "undefined" ? localStorage.getItem('printmaster_machines') : null;
-    return saved ? JSON.parse(saved) : defaultMachines;
-  });
-
-  // Inks
-  const [inks, setInks] = useState(() => {
-    const saved = typeof window !== "undefined" ? localStorage.getItem('printmaster_inks') : null;
-    return saved ? JSON.parse(saved) : defaultInks;
-  });
-
-  // Processes
-  const [processes, setProcesses] = useState(() => {
-    const saved = typeof window !== "undefined" ? localStorage.getItem('printmaster_processes') : null;
-    return saved ? JSON.parse(saved) : defaultProcesses;
-  });
-
-  // Product Types
-  const [productTypes, setProductTypes] = useState(() => {
-    const saved = typeof window !== "undefined" ? localStorage.getItem('printmaster_product_types') : null;
-    return saved ? JSON.parse(saved) : defaultProductTypes;
-  });
-
-  // GSM Options
-  const [gsmOptions, setGsmOptions] = useState(() => {
-    const saved = typeof window !== "undefined" ? localStorage.getItem('printmaster_gsm_options') : null;
-    return saved ? JSON.parse(saved) : defaultGsmOptions;
-  });
-
-  // Print Types
-  const [printTypes, setPrintTypes] = useState(() => {
-    const saved = typeof window !== "undefined" ? localStorage.getItem('printmaster_print_types') : null;
-    return saved ? JSON.parse(saved) : defaultPrintTypes;
-  });
-
-  // Persist to localStorage
-  useEffect(() => {
-    localStorage.setItem('printmaster_paper_types', JSON.stringify(paperTypes));
-  }, [paperTypes]);
+  const fetchAll = useCallback(async () => {
+    setLoading(true);
+    const [pt, mc, ik, pr, prt, gsm, prtypes, cust] = await Promise.all([
+      supabase.from('paper_types').select('*').order('id'),
+      supabase.from('machines').select('*').order('id'),
+      supabase.from('inks').select('*').order('id'),
+      supabase.from('processes').select('*').order('id'),
+      supabase.from('product_types').select('*').order('name'),
+      supabase.from('gsm_options').select('*').order('value'),
+      supabase.from('print_types').select('*').order('id'),
+      supabase.from('customers').select('*').order('name'),
+    ]);
+    if (pt.data) setPaperTypes(pt.data.map(toCamelPaperType));
+    if (mc.data) setMachines(mc.data.map(toCamelMachine));
+    if (ik.data) setInks(ik.data.map(toCamelInk));
+    if (pr.data) setProcesses(pr.data.map(toCamelProcess));
+    if (prt.data) setProductTypes(prt.data.map(r => r.name));
+    if (gsm.data) setGsmOptions(gsm.data.map(r => r.value));
+    if (prtypes.data) setPrintTypes(prtypes.data.map(r => r.name));
+    if (cust.data) setCustomers(cust.data.map(toCamelCustomer));
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
-    localStorage.setItem('printmaster_machines', JSON.stringify(machines));
-  }, [machines]);
+    fetchAll();
+  }, [fetchAll]);
 
-  useEffect(() => {
-    localStorage.setItem('printmaster_inks', JSON.stringify(inks));
-  }, [inks]);
-
-  useEffect(() => {
-    localStorage.setItem('printmaster_processes', JSON.stringify(processes));
-  }, [processes]);
-
-  useEffect(() => {
-    localStorage.setItem('printmaster_product_types', JSON.stringify(productTypes));
-  }, [productTypes]);
-
-  useEffect(() => {
-    localStorage.setItem('printmaster_gsm_options', JSON.stringify(gsmOptions));
-  }, [gsmOptions]);
-
-  useEffect(() => {
-    localStorage.setItem('printmaster_print_types', JSON.stringify(printTypes));
-  }, [printTypes]);
-
-  // Add functions
-  const addPaperType = (item) => {
-    const newItem = { ...item, id: Date.now() };
+  // ---- Paper Types ----
+  const addPaperType = async (item) => {
+    const { data, error } = await supabase
+      .from('paper_types')
+      .insert({ name: item.name, gsm_range: item.gsmRange, rate_per_kg: item.ratePerKg, stock: item.stock })
+      .select().single();
+    if (error) throw error;
+    const newItem = toCamelPaperType(data);
     setPaperTypes(prev => [...prev, newItem]);
     return newItem;
   };
 
-  const addMachine = (item) => {
-    const newItem = { ...item, id: Date.now() };
+  const updatePaperType = async (id, updates) => {
+    const dbUpdates = {};
+    if (updates.name !== undefined) dbUpdates.name = updates.name;
+    if (updates.gsmRange !== undefined) dbUpdates.gsm_range = updates.gsmRange;
+    if (updates.ratePerKg !== undefined) dbUpdates.rate_per_kg = updates.ratePerKg;
+    if (updates.stock !== undefined) dbUpdates.stock = updates.stock;
+    const { error } = await supabase.from('paper_types').update(dbUpdates).eq('id', id);
+    if (error) throw error;
+    setPaperTypes(prev => prev.map(item => item.id === id ? { ...item, ...updates } : item));
+  };
+
+  const deletePaperType = async (id) => {
+    const { error } = await supabase.from('paper_types').delete().eq('id', id);
+    if (error) throw error;
+    setPaperTypes(prev => prev.filter(item => item.id !== id));
+  };
+
+  // ---- Machines ----
+  const addMachine = async (item) => {
+    const { data, error } = await supabase
+      .from('machines')
+      .insert({ name: item.name, type: item.type, max_size: item.maxSize, colors: item.colors, speed_per_hour: item.speedPerHour, rate_per_impression: item.ratePerImpression })
+      .select().single();
+    if (error) throw error;
+    const newItem = toCamelMachine(data);
     setMachines(prev => [...prev, newItem]);
     return newItem;
   };
 
-  const addInk = (item) => {
-    const newItem = { ...item, id: Date.now() };
+  const updateMachine = async (id, updates) => {
+    const dbUpdates = {};
+    if (updates.name !== undefined) dbUpdates.name = updates.name;
+    if (updates.type !== undefined) dbUpdates.type = updates.type;
+    if (updates.maxSize !== undefined) dbUpdates.max_size = updates.maxSize;
+    if (updates.colors !== undefined) dbUpdates.colors = updates.colors;
+    if (updates.speedPerHour !== undefined) dbUpdates.speed_per_hour = updates.speedPerHour;
+    if (updates.ratePerImpression !== undefined) dbUpdates.rate_per_impression = updates.ratePerImpression;
+    const { error } = await supabase.from('machines').update(dbUpdates).eq('id', id);
+    if (error) throw error;
+    setMachines(prev => prev.map(item => item.id === id ? { ...item, ...updates } : item));
+  };
+
+  const deleteMachine = async (id) => {
+    const { error } = await supabase.from('machines').delete().eq('id', id);
+    if (error) throw error;
+    setMachines(prev => prev.filter(item => item.id !== id));
+  };
+
+  // ---- Inks ----
+  const addInk = async (item) => {
+    const { data, error } = await supabase
+      .from('inks')
+      .insert({ name: item.name, type: item.type, brand: item.brand, rate_per_kg: item.ratePerKg, coverage: item.coverage })
+      .select().single();
+    if (error) throw error;
+    const newItem = toCamelInk(data);
     setInks(prev => [...prev, newItem]);
     return newItem;
   };
 
-  const addProcess = (item) => {
-    const newItem = { ...item, id: Date.now() };
+  const updateInk = async (id, updates) => {
+    const dbUpdates = {};
+    if (updates.name !== undefined) dbUpdates.name = updates.name;
+    if (updates.type !== undefined) dbUpdates.type = updates.type;
+    if (updates.brand !== undefined) dbUpdates.brand = updates.brand;
+    if (updates.ratePerKg !== undefined) dbUpdates.rate_per_kg = updates.ratePerKg;
+    if (updates.coverage !== undefined) dbUpdates.coverage = updates.coverage;
+    const { error } = await supabase.from('inks').update(dbUpdates).eq('id', id);
+    if (error) throw error;
+    setInks(prev => prev.map(item => item.id === id ? { ...item, ...updates } : item));
+  };
+
+  const deleteInk = async (id) => {
+    const { error } = await supabase.from('inks').delete().eq('id', id);
+    if (error) throw error;
+    setInks(prev => prev.filter(item => item.id !== id));
+  };
+
+  // ---- Processes ----
+  const addProcess = async (item) => {
+    const { data, error } = await supabase
+      .from('processes')
+      .insert({ name: item.name, type: item.type, rate_type: item.rateType, rate: item.rate, min_charge: item.minCharge })
+      .select().single();
+    if (error) throw error;
+    const newItem = toCamelProcess(data);
     setProcesses(prev => [...prev, newItem]);
     return newItem;
   };
 
-  const addProductType = (name) => {
-    if (!productTypes.includes(name)) {
-      setProductTypes(prev => [...prev, name]);
-    }
-  };
-
-  const addGsmOption = (gsm) => {
-    if (!gsmOptions.includes(gsm)) {
-      setGsmOptions(prev => [...prev, gsm].sort((a, b) => a - b));
-    }
-  };
-
-  const addPrintType = (name) => {
-    if (!printTypes.includes(name)) {
-      setPrintTypes(prev => [...prev, name]);
-    }
-  };
-
-  // Update functions
-  const updatePaperType = (id, updates) => {
-    setPaperTypes(prev => prev.map(item => item.id === id ? { ...item, ...updates } : item));
-  };
-
-  const updateMachine = (id, updates) => {
-    setMachines(prev => prev.map(item => item.id === id ? { ...item, ...updates } : item));
-  };
-
-  const updateInk = (id, updates) => {
-    setInks(prev => prev.map(item => item.id === id ? { ...item, ...updates } : item));
-  };
-
-  const updateProcess = (id, updates) => {
+  const updateProcess = async (id, updates) => {
+    const dbUpdates = {};
+    if (updates.name !== undefined) dbUpdates.name = updates.name;
+    if (updates.type !== undefined) dbUpdates.type = updates.type;
+    if (updates.rateType !== undefined) dbUpdates.rate_type = updates.rateType;
+    if (updates.rate !== undefined) dbUpdates.rate = updates.rate;
+    if (updates.minCharge !== undefined) dbUpdates.min_charge = updates.minCharge;
+    const { error } = await supabase.from('processes').update(dbUpdates).eq('id', id);
+    if (error) throw error;
     setProcesses(prev => prev.map(item => item.id === id ? { ...item, ...updates } : item));
   };
 
-  // Delete functions
-  const deletePaperType = (id) => {
-    setPaperTypes(prev => prev.filter(item => item.id !== id));
-  };
-
-  const deleteMachine = (id) => {
-    setMachines(prev => prev.filter(item => item.id !== id));
-  };
-
-  const deleteInk = (id) => {
-    setInks(prev => prev.filter(item => item.id !== id));
-  };
-
-  const deleteProcess = (id) => {
+  const deleteProcess = async (id) => {
+    const { error } = await supabase.from('processes').delete().eq('id', id);
+    if (error) throw error;
     setProcesses(prev => prev.filter(item => item.id !== id));
   };
 
-  const deleteProductType = (name) => {
+  // ---- Product Types ----
+  const addProductType = async (name) => {
+    const { error } = await supabase.from('product_types').insert({ name });
+    if (error) throw error;
+    setProductTypes(prev => [...prev, name]);
+  };
+
+  const deleteProductType = async (name) => {
+    const { error } = await supabase.from('product_types').delete().eq('name', name);
+    if (error) throw error;
     setProductTypes(prev => prev.filter(item => item !== name));
   };
 
-  const deleteGsmOption = (gsm) => {
+  // ---- GSM Options ----
+  const addGsmOption = async (gsm) => {
+    const { error } = await supabase.from('gsm_options').insert({ value: gsm });
+    if (error) throw error;
+    setGsmOptions(prev => [...prev, gsm].sort((a, b) => a - b));
+  };
+
+  const deleteGsmOption = async (gsm) => {
+    const { error } = await supabase.from('gsm_options').delete().eq('value', gsm);
+    if (error) throw error;
     setGsmOptions(prev => prev.filter(item => item !== gsm));
   };
 
-  const deletePrintType = (name) => {
+  // ---- Print Types ----
+  const addPrintType = async (name) => {
+    const { error } = await supabase.from('print_types').insert({ name });
+    if (error) throw error;
+    setPrintTypes(prev => [...prev, name]);
+  };
+
+  const deletePrintType = async (name) => {
+    const { error } = await supabase.from('print_types').delete().eq('name', name);
+    if (error) throw error;
     setPrintTypes(prev => prev.filter(item => item !== name));
+  };
+
+  // ---- Customers ----
+  const addCustomer = async (item) => {
+    const { data, error } = await supabase
+      .from('customers')
+      .insert({ name: item.name, phone: item.phone || null, email: item.email || null })
+      .select().single();
+    if (error) throw error;
+    const newItem = toCamelCustomer(data);
+    setCustomers(prev => [newItem, ...prev]);
+    return newItem;
+  };
+
+  const updateCustomer = async (id, updates) => {
+    const { error } = await supabase.from('customers').update(updates).eq('id', id);
+    if (error) throw error;
+    setCustomers(prev => prev.map(item => item.id === id ? { ...item, ...updates } : item));
+  };
+
+  const deleteCustomer = async (id) => {
+    const { error } = await supabase.from('customers').delete().eq('id', id);
+    if (error) throw error;
+    setCustomers(prev => prev.filter(item => item.id !== id));
   };
 
   return (
@@ -183,6 +266,8 @@ export const MasterDataProvider = ({ children }) => {
       productTypes,
       gsmOptions,
       printTypes,
+      customers,
+      loading,
       // Add
       addPaperType,
       addMachine,
@@ -191,6 +276,7 @@ export const MasterDataProvider = ({ children }) => {
       addProductType,
       addGsmOption,
       addPrintType,
+      addCustomer,
       // Update
       updatePaperType,
       updateMachine,
@@ -203,7 +289,11 @@ export const MasterDataProvider = ({ children }) => {
       deleteProcess,
       deleteProductType,
       deleteGsmOption,
-      deletePrintType
+      deletePrintType,
+      updateCustomer,
+      deleteCustomer,
+      // Refresh
+      refetch: fetchAll
     }}>
       {children}
     </MasterDataContext.Provider>

@@ -21,6 +21,8 @@ const Profile = () => {
   const [form] = Form.useForm();
   const [passwordForm] = Form.useForm();
 
+  if (!currentUser) return null;
+
   const roleColors = {
     ADMIN: 'red',
     ESTIMATOR: 'blue',

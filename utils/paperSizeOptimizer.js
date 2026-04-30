@@ -15,8 +15,9 @@ export const STANDARD_SIZES = [
   // { name: 'Legal', width: 216, height: 356, category: 'US' },
   // { name: 'Tabloid', width: 279, height: 432, category: 'US' },
   // { name: '18x23', width: 457, height: 584, category: 'Indian' },
+  { name: '15x30', width: 381, height: 762, category: 'Indian' },
   { name: '17x24', width: 432, height: 610, category: 'Indian' },
-  { name: '18x23', width: 457, height: 610, category: 'Indian' },
+  { name: '18x23', width: 457, height: 584, category: 'Indian' },  // 23" = 584mm (was wrongly 610)
   { name: '18x25', width: 457, height: 635, category: 'Indian' },
   { name: '20x30', width: 508, height: 762, category: 'Indian' },
   { name: '23x36', width: 584, height: 914, category: 'Indian' },
@@ -32,14 +33,14 @@ export const UNIT_CONVERSIONS = {
 };
 
 // Default print imposition margins (all in mm).
-// These are the industry-standard defaults; users can override them in the UI.
+// Indian offset press industry-standard defaults; users can override in the UI.
 export const DEFAULT_MARGINS = {
-  bleed: 3,          // mm — added on each side of the item for bleed
-  gutter: 3,         // mm — space between items on the sheet
-  gripperLeft: 10,   // mm — non-print zone on the left (lead edge)
-  gripperRight: 10,  // mm — non-print zone on the right (trail edge)
-  gripperTop: 0,     // mm — non-print zone on the top
-  gripperBottom: 10, // mm — non-print zone on the bottom (delivery edge)
+  bleed: 3,           // mm — standard 3mm bleed on each side of the item
+  gutter: 3,          // mm — 3mm gap between items on the sheet
+  gripperLeft: 10,    // mm — lead edge gripper (mechanical clamp area)
+  gripperRight: 5,    // mm — trail edge margin
+  gripperTop: 5,      // mm — top edge margin
+  gripperBottom: 5,   // mm — bottom edge margin
 };
 
 /**
@@ -258,7 +259,7 @@ export const getSizeOptions = (customerWidth, customerHeight, margins = {}) => {
   
   // Final Selection Rule:
   //  Priority 1: Lowest wastage %
-  //  Priority 2 (tiebreaker): Higher prints (UPS)
+  //  Priority 2 (tiebreaker): Higher UPS (more pieces per sheet)
   results.sort((a, b) => {
     if (a.wastePercent !== b.wastePercent) {
       return a.wastePercent - b.wastePercent;

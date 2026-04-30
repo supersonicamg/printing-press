@@ -1,8 +1,5 @@
 'use client';
 import React from 'react';
-import { Typography } from 'antd';
-
-const { Text } = Typography;
 
 /**
  * Visual representation of paper layout showing how ups fit on a sheet.
@@ -22,9 +19,9 @@ const PaperLayoutVisualizer = ({
     return null;
   }
 
-  // Scale to fit container. Cap display height at 420px to keep tall sheets manageable.
-  const maxDisplayWidth = 280;
-  const maxDisplayHeight = 420;
+  // Scale to fit container. Cap display height at 280px to keep tall sheets manageable.
+  const maxDisplayWidth = 220;
+  const maxDisplayHeight = 280;
   const scaleByWidth  = maxDisplayWidth  / sheetWidth;
   const scaleByHeight = maxDisplayHeight / sheetHeight;
   const scale = Math.min(scaleByWidth, scaleByHeight);
@@ -39,17 +36,10 @@ const PaperLayoutVisualizer = ({
   const GRIPPER_STRIPE = 'repeating-linear-gradient(45deg,#e8e8e8,#e8e8e8 2px,transparent 2px,transparent 6px)';
 
   return (
-    <div style={{ 
-      display: 'flex', 
-      flexDirection: 'column', 
-      alignItems: 'center',
-      padding: '12px 8px 8px',
-      background: 'hsl(var(--muted))',
-      borderRadius: 12
-    }}>
-      <Text type="secondary" style={{ fontSize: 11, marginBottom: 8, fontWeight: 500 }}>
+    <div className="bg-white border border-gray-100 rounded-xl p-3 flex flex-col items-center">
+      <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-2 text-center">
         Sheet: {sheetWidth} × {sheetHeight} mm
-      </Text>
+      </p>
 
       {/* Paper sheet */}
       <div style={{
@@ -177,7 +167,7 @@ const PaperLayoutVisualizer = ({
             border: '1.5px solid hsl(var(--primary) / 0.55)',
             borderRadius: 1, flexShrink: 0,
           }} />
-          <Text type="secondary">Content ({ups} up{ups !== 1 ? 's' : ''})</Text>
+          <span className="text-xs text-muted-foreground">Content ({ups} up{ups !== 1 ? 's' : ''})</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <div style={{ 
@@ -186,7 +176,7 @@ const PaperLayoutVisualizer = ({
             border: '1px dashed hsl(var(--primary) / 0.35)',
             borderRadius: 1, flexShrink: 0,
           }} />
-          <Text type="secondary">Bleed (3mm)</Text>
+          <span className="text-xs text-muted-foreground">Bleed (3mm)</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <div style={{ 
@@ -195,14 +185,14 @@ const PaperLayoutVisualizer = ({
             border: '1px dashed #bbb',
             borderRadius: 1, flexShrink: 0,
           }} />
-          <Text type="secondary">Gripper / waste ({wastePercent}%)</Text>
+          <span className="text-xs text-muted-foreground">Gripper / waste ({wastePercent}%)</span>
         </div>
       </div>
 
-      <Text type="secondary" style={{ fontSize: 10, marginTop: 6 }}>
+      <p className="text-xs text-muted-foreground mt-2 text-center">
         Item: {Math.round(itemWidth * 10) / 10} × {Math.round(itemHeight * 10) / 10} mm
-        &nbsp;·&nbsp;Bleed: {gridLayout.bleed ?? 3}mm each side
-      </Text>
+        {' · '}Bleed: {gridLayout.bleed ?? 3}mm each side
+      </p>
     </div>
   );
 };

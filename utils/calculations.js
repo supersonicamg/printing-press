@@ -12,6 +12,7 @@ const PAPER_SIZES = {
   'Letter': { width: 216, height: 279 },
   'Legal': { width: 216, height: 356 },
   'Tabloid': { width: 279, height: 432 },
+  '15x30': { width: 381, height: 762 },
   '20x30': { width: 508, height: 762 },
   '23x36': { width: 584, height: 914 },
   '25x36': { width: 635, height: 914 }
@@ -35,20 +36,27 @@ export const calculatePaperCost = ({
   const wastageSheets = Math.ceil(sheetsNeeded * (wastagePercent / 100));
   const totalSheets = sheetsNeeded + wastageSheets;
   
-  // Calculate paper weight in kg
-  // Formula: area_m² = (width_mm × height_mm) / 1,000,000
-  //          weight_kg/sheet = area_m² × gsm / 1000
-  const sheetAreaSqM = (size.width * size.height) / 1000000;
-  const weightPerSheet = sheetAreaSqM * gsm / 1000;
-  const paperWeight = totalSheets * weightPerSheet;
-  
-  // Calculate cost
-  const paperCost = paperWeight * ratePerKg;
-  
+  // Spreadsheet-accurate per-ream formula:
+  // Weight/Sheet (g) = (w_mm × h_mm / 1,000,000) × GSM
+  // Weight/Ream (kg) = (weightPerSheet_g × sheetsPerReam) / 1000
+  // Price/Ream (₹)   = weightPerRam_kg × ratePerKg
+  // Total cost       = pricePerRam × ceil(totalSheets / sheetsPerReam)
+  const { sheetsPerReam = 500 } = arguments[0] || {};
+  const reams = Math.ceil(totalSheets / sheetsPerReam);
+  const weightPerSheet_g = (size.width * size.height / 1e6) * gsm;
+  const weightPerRam_kg  = (weightPerSheet_g * sheetsPerReam) / 1000;
+  const pricePerRam      = weightPerRam_kg * ratePerKg;
+  const paperWeight      = parseFloat((weightPerRam_kg * reams).toFixed(2));
+  const paperCost        = parseFloat((pricePerRam * reams).toFixed(2));
+
   return {
     totalSheets: Math.round(totalSheets),
-    paperWeight: parseFloat(paperWeight.toFixed(2)),
-    paperCost: parseFloat(paperCost.toFixed(2))
+    totalReams: reams,
+    weightPerSheet_g: parseFloat(weightPerSheet_g.toFixed(4)),
+    weightPerRam_kg:  parseFloat(weightPerRam_kg.toFixed(4)),
+    pricePerRam:      parseFloat(pricePerRam.toFixed(2)),
+    paperWeight,
+    paperCost,
   };
 };
 
