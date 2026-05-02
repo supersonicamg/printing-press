@@ -183,8 +183,9 @@ const DEFAULTS = {
   paperType: '', gsm: 100, ratePerKg: 78, sheetSize: '25x36',
   paperSupply: 'DP',
   printType: 'Single Side',
-  ups: 1, colors: 4,
+  cut: false, colors: 4,
   plateCostPerPlate: 220, inkRatePerImpression: 0.06,
+  recPayment: 0, paymentMode: 'ONLINE', receivedBy: '',
 };
 
 const SALES_PERSONS = ['Rahul Verma', 'Anita Desai', 'Kiran Rao', 'Suresh Menon', 'Sajid', 'Ismail', 'Self'];
@@ -234,8 +235,7 @@ const NewEstimate = () => {
   useEffect(() => {
     const t = setTimeout(() => {
       const quantity = Number(f.quantity) || 0;
-      const ups = Math.max(1, Number(f.ups) || 1);
-      // quantity = sheets of paper (matches Excel QTY column)
+      // quantity = sheets of paper entering the press (matches Excel QTY column)
       const totalSheets = quantity;
       const gsm = Number(f.gsm) || 0;
       const ratePerKg = Number(f.ratePerKg) || 0;
@@ -249,10 +249,14 @@ const NewEstimate = () => {
       const wMm = sz?.width || 0;
       const hMm = sz?.height || 0;
 
-      // Impressions = sheets × UPS × sides (Excel: IMPR = QTY × UPS × sideMult)
-      // e.g. 500 sheets × 2 UPS × 1 side = 1000 impressions
+      // Impressions = sheets × cutFactor × sideFactor
+      // cut=yes → 23×36 sheet cut in half → each sheet yields 2 pieces → cutFactor=2
+      // BNB (both side) → each piece printed front+back → sideFactor=2
+      // e.g. qty=500, cut=yes, SS → impressions = 500 × 2 × 1 = 1000
+      // e.g. qty=750, cut=yes, BNB → impressions = 750 × 2 × 2 = 3000
+      const cutFactor = f.cut ? 2 : 1;
       const sideMult = isBothSide ? 2 : 1;
-      const impressions = quantity * ups * sideMult;
+      const impressions = quantity * cutFactor * sideMult;
 
       // Paper cost — weight/sheet (kg) = (w × h / 1,000,000) × gsm / 1000
       const weightPerSheetKg = (wMm * hMm / 1e6) * gsm / 1000;
@@ -299,7 +303,7 @@ const NewEstimate = () => {
   const workType = f.paperSupply === 'DP' ? 'PAPER + PRINT + CUT' : 'PRINT + CUT';
 
   /* ── Per piece cost ── */
-  const outputPieces = (Number(f.quantity) || 0) * Math.max(1, Number(f.ups) || 1);
+  const outputPieces = (Number(f.quantity) || 0) * (f.cut ? 2 : 1);
   const perPiece = outputPieces > 0 && calc.billAmount > 0
     ? Math.round((calc.billAmount / outputPieces) * 100) / 100
     : 0;
@@ -319,22 +323,28 @@ const NewEstimate = () => {
     if (!validate()) return;
     const profitAmt = Number(profit) || 0;
     const qty = Number(f.quantity) || 0;
-    const ups = Math.max(1, Number(f.ups) || 1);
+    const isBothSide = f.printType === 'Both Side';
+    const recPaymentAmt = Number(f.recPayment) || 0;
+    const balPayment = Math.round((calc.billAmount - recPaymentAmt) * 100) / 100;
     saveEstimate({
       estimateNo,
       model: 'excel-v1',
       jobDetails: {
         customerName: f.customerName, salesPerson: f.salesPerson,
         quantity: qty,
+        type: isBothSide ? 'BNB' : 'SS',
+        cut: f.cut,
       },
       paperEstimation: {
         paperType: f.paperType, gsm: f.gsm, sheetSize: f.sheetSize,
         ratePerKg: f.ratePerKg, paperSupply: f.paperSupply,
-        ups, sheets: calc.totalSheets,
+        sheets: calc.totalSheets,
         paperCost: calc.paperCost,
+        paperCostPerSheet: calc.paperCostPerSheet,
       },
       printingEstimation: {
-        printType: f.printType, ups, colors: f.colors,
+        printType: f.printType, colors: f.colors,
+        cut: f.cut,
         impressions: calc.impressions,
       },
       costing: {
@@ -342,11 +352,18 @@ const NewEstimate = () => {
         inkRatePerImpression: f.inkRatePerImpression,
         plateCost: calc.plateCost, inkCost: calc.inkCost,
       },
+      payment: {
+        recPayment: recPaymentAmt,
+        balPayment,
+        paymentMode: recPaymentAmt > 0 ? f.paymentMode : null,
+        receivedBy: recPaymentAmt > 0 ? f.receivedBy : null,
+      },
       summary: {
         workType,
         paperCost: calc.paperCost, plateCost: calc.plateCost,
         inkCost: calc.inkCost, productionCost: calc.productionCost,
         profit: profitAmt, billAmount: calc.billAmount,
+        recPayment: recPaymentAmt, balPayment,
         paperCostPerSheet: calc.paperCostPerSheet,
         // Legacy compatibility so EstimateList still renders correctly
         printingCost: calc.plateCost + calc.inkCost,
@@ -438,10 +455,10 @@ const NewEstimate = () => {
                     min={1} placeholder="500"
                     className={errors.quantity ? 'border-destructive' : ''} />
                   {errors.quantity && <p className="text-xs text-destructive mt-1">{errors.quantity}</p>}
-                  {calc.totalSheets > 0 && Number(f.ups) > 1 && (
+                  {calc.totalSheets > 0 && f.cut && (
                     <p className="text-xs text-muted-foreground mt-1">
-                      <span className="font-semibold text-foreground">{calc.totalSheets.toLocaleString()}</span> sheets
-                      {' × '}{f.ups} ups = <span className="font-semibold text-violet-600">{calc.impressions.toLocaleString()} impressions</span>
+                      <span className="font-semibold text-foreground">{calc.totalSheets.toLocaleString()}</span> sheets cut in half
+                      {' → '}<span className="font-semibold text-emerald-600">{calc.impressions.toLocaleString()} impressions</span>
                     </p>
                   )}
                 </div>
@@ -579,31 +596,16 @@ const NewEstimate = () => {
                   </div>
                 </div>
 
-                {/* UPS selector */}
+                {/* Cut toggle */}
                 <div>
-                  <FieldLabel hint="pieces printed per sheet">Up on Sheet (UPS)</FieldLabel>
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {[1, 2, 4, 6].map(n => (
-                      <button key={n} type="button"
-                        onClick={() => { set('ups', n); setAppliedUps(null); }}
-                        className={cn(
-                          'w-12 h-10 rounded-lg text-sm font-bold border-2 transition-all',
-                          f.ups === n
-                            ? 'border-violet-500 bg-violet-50 text-violet-700'
-                            : 'border-gray-200 bg-white text-muted-foreground hover:border-gray-300',
-                        )}>
-                        {n}
-                      </button>
-                    ))}
-                    {calc.totalSheets > 0 && calc.impressions > calc.totalSheets && (
-                      <p className="text-xs text-muted-foreground ml-1">
-                        → <span className="font-semibold text-violet-600">{calc.impressions.toLocaleString()} impressions</span>
-                      </p>
-                    )}
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-1.5">
-                    Use <button type="button" onClick={() => setShowCalc(true)} className="text-violet-600 font-semibold hover:underline">Smart Size</button> to auto-calculate based on finished piece dimensions.
-                  </p>
+                  <FieldLabel hint="23×36 cut in half → each sheet gives 2 pieces → impressions × 2">Cut Sheet?</FieldLabel>
+                  <Toggle
+                    checked={f.cut}
+                    onChange={v => set('cut', v)}
+                    label="Cut"
+                    sublabel={f.cut ? 'Sheet cut in half — impressions doubled' : 'No cut — 1 sheet = 1 piece'}
+                    activeColor="bg-emerald-500"
+                  />
                 </div>
 
                 {/* Colors */}
@@ -649,6 +651,44 @@ const NewEstimate = () => {
               </div>
             </SectionCard>
 
+            {/* ── 4. Payment Details ── */}
+            <SectionCard title="Payment Details" icon={IndianRupee} accent="bg-emerald-400">
+              <div className="space-y-4">
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <FieldLabel hint="₹ received so far">Received Payment</FieldLabel>
+                    <NumInput value={f.recPayment} onChange={v => set('recPayment', v)} min={0} placeholder="0" />
+                  </div>
+                  <div>
+                    <FieldLabel>Received By</FieldLabel>
+                    <NativeSelect value={f.receivedBy} onChange={v => set('receivedBy', v)} placeholder="Select…">
+                      {SALES_PERSONS.map(s => <option key={s} value={s}>{s}</option>)}
+                    </NativeSelect>
+                  </div>
+                </div>
+
+                <div>
+                  <FieldLabel>Payment Mode</FieldLabel>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {['ONLINE', 'CASH', 'CHEQUE'].map(mode => (
+                      <button key={mode} type="button"
+                        onClick={() => set('paymentMode', mode)}
+                        className={cn(
+                          'px-5 py-2 rounded-lg text-sm font-bold border-2 transition-all',
+                          f.paymentMode === mode
+                            ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                            : 'border-gray-200 bg-white text-muted-foreground hover:border-gray-300',
+                        )}>
+                        {mode}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+              </div>
+            </SectionCard>
+
           </div>
 
           {/* ═══ Summary Panel (sticky) ═══ */}
@@ -683,7 +723,7 @@ const NewEstimate = () => {
                     <p className="text-xl font-black text-amber-700 tabular-nums mt-0.5 leading-none">
                       {calc.totalSheets > 0 ? calc.totalSheets.toLocaleString() : '—'}
                     </p>
-                    {Number(f.ups) > 1 && <p className="text-[9px] text-amber-600 mt-0.5">{f.ups} ups</p>}
+                    {f.cut && <p className="text-[9px] text-emerald-600 font-bold mt-0.5">✂ cut</p>}
                   </div>
                   <div className="rounded-xl bg-violet-50 border border-violet-100 px-3 py-2.5 text-center">
                     <p className="text-[9px] font-bold uppercase tracking-widest text-violet-600/70">Impressions</p>
@@ -733,6 +773,17 @@ const NewEstimate = () => {
                     {formatCurrency(calc.billAmount)}
                   </p>
                 </div>
+
+                {/* Received / Balance Due */}
+                {(Number(f.recPayment) || 0) > 0 && (
+                  <div className="space-y-1.5 rounded-lg bg-gray-50 border border-gray-100 px-3 py-2.5">
+                    <CostRow label="Received" value={formatCurrency(Number(f.recPayment) || 0)} />
+                    <CostRow
+                      label="Balance Due"
+                      value={formatCurrency(Math.max(0, Math.round((calc.billAmount - (Number(f.recPayment) || 0)) * 100) / 100))}
+                    />
+                  </div>
+                )}
 
                 {/* Per-piece metrics */}
                 {(calc.paperCostPerSheet > 0 || perPiece > 0) && (
@@ -793,7 +844,6 @@ const NewEstimate = () => {
         onClose={() => setShowCalc(false)}
         onApply={(sizeName, ups) => {
           set('sheetSize', sizeName);
-          set('ups', ups);
           setAppliedUps(ups);
           setErrors(e => ({ ...e, sheetSize: undefined }));
         }}
