@@ -179,12 +179,10 @@ const SHEET_SIZE_OPTIONS = STANDARD_SIZES.map(s => ({
 
 /* ─── Form defaults ─── */
 const DEFAULTS = {
-  customerName: '', jobName: '', productType: '', quantity: 500,
-  deliveryDate: '', salesPerson: '', remarks: '',
+  customerName: '', salesPerson: '', quantity: 500,
   paperType: '', gsm: 100, ratePerKg: 78, sheetSize: '25x36',
   paperSupply: 'DP',
   printType: 'Single Side',
-  printMethod: 'print-cut', // 'print-cut' = print N-up then cut | 'cut-print' = cut first then each piece through press
   ups: 1, colors: 4,
   plateCostPerPlate: 220, inkRatePerImpression: 0.06,
 };
@@ -197,7 +195,7 @@ const SALES_PERSONS = ['Rahul Verma', 'Anita Desai', 'Kiran Rao', 'Suresh Menon'
 const NewEstimate = () => {
   const router = useRouter();
   const { saveEstimate, generateEstimateId } = useEstimate();
-  const { paperTypes, productTypes, gsmOptions, addProductType, addGsmOption, addPaperType } = useMasterData();
+  const { paperTypes, gsmOptions, addGsmOption, addPaperType } = useMasterData();
 
   const [estimateNo, setEstimateNo] = useState('');
   useEffect(() => {
@@ -229,7 +227,7 @@ const NewEstimate = () => {
   const [calc, setCalc] = useState({
     impressions: 0, paperCost: 0, plateCost: 0, inkCost: 0,
     productionCost: 0, billAmount: 0, paperCostPerSheet: 0,
-    weightPerSheetG: 0, totalWeightKg: 0, totalSheets: 0,
+    totalSheets: 0,
   });
 
   /* ── Recalculate (debounced 200ms) ── */
@@ -237,7 +235,8 @@ const NewEstimate = () => {
     const t = setTimeout(() => {
       const quantity = Number(f.quantity) || 0;
       const ups = Math.max(1, Number(f.ups) || 1);
-      const totalSheets = quantity > 0 ? Math.ceil(quantity / ups) : 0;
+      // quantity = sheets of paper (matches Excel QTY column)
+      const totalSheets = quantity;
       const gsm = Number(f.gsm) || 0;
       const ratePerKg = Number(f.ratePerKg) || 0;
       const isBothSide = f.printType === 'Both Side';
@@ -250,16 +249,13 @@ const NewEstimate = () => {
       const wMm = sz?.width || 0;
       const hMm = sz?.height || 0;
 
-      // Impressions depend on print method:
-      // print-cut: print N-up full sheets, cut after → impressions = totalSheets
-      // cut-print: cut to piece size first, each piece goes through press → impressions = quantity
+      // Impressions = sheets × UPS × sides (Excel: IMPR = QTY × UPS × sideMult)
+      // e.g. 500 sheets × 2 UPS × 1 side = 1000 impressions
       const sideMult = isBothSide ? 2 : 1;
-      const impressionBase = f.printMethod === 'cut-print' ? quantity : totalSheets;
-      const impressions = impressionBase * sideMult;
+      const impressions = quantity * ups * sideMult;
 
       // Paper cost — weight/sheet (kg) = (w × h / 1,000,000) × gsm / 1000
       const weightPerSheetKg = (wMm * hMm / 1e6) * gsm / 1000;
-      const totalWeightKg = Math.round(weightPerSheetKg * totalSheets * 100) / 100;
       const paperCost = f.paperSupply === 'PP'
         ? 0
         : Math.round(weightPerSheetKg * totalSheets * ratePerKg * 100) / 100;
@@ -272,9 +268,8 @@ const NewEstimate = () => {
       const productionCost = Math.round((paperCost + plateCost + inkCost) * 100) / 100;
       const billAmount = Math.round((productionCost + (Number(profit) || 0)) * 100) / 100;
       const paperCostPerSheet = totalSheets > 0 ? Math.round((paperCost / totalSheets) * 10000) / 10000 : 0;
-      const weightPerSheetG = Math.round(weightPerSheetKg * 1000 * 100) / 100;
 
-      setCalc({ impressions, paperCost, plateCost, inkCost, productionCost, billAmount, paperCostPerSheet, weightPerSheetG, totalWeightKg, totalSheets });
+      setCalc({ impressions, paperCost, plateCost, inkCost, productionCost, billAmount, paperCostPerSheet, totalSheets });
     }, 200);
     return () => clearTimeout(t);
   }, [f, profit]);
@@ -294,9 +289,8 @@ const NewEstimate = () => {
   const [errors, setErrors] = useState({});
 
   /* ── Dialogs ── */
-  const [dlg, setDlg] = useState({ customer: false, product: false, paper: false, gsm: false });
+  const [dlg, setDlg] = useState({ customer: false, paper: false, gsm: false });
   const [newCustomer, setNewCustomer] = useState({ name: '', phone: '', email: '' });
-  const [newProductType, setNewProductType] = useState('');
   const [newPaperName, setNewPaperName] = useState('');
   const [newPaperRate, setNewPaperRate] = useState(80);
   const [newGsm, setNewGsm] = useState('');
@@ -305,16 +299,15 @@ const NewEstimate = () => {
   const workType = f.paperSupply === 'DP' ? 'PAPER + PRINT + CUT' : 'PRINT + CUT';
 
   /* ── Per piece cost ── */
-  const perPiece = Number(f.quantity) > 0 && calc.billAmount > 0
-    ? Math.round((calc.billAmount / Number(f.quantity)) * 100) / 100
+  const outputPieces = (Number(f.quantity) || 0) * Math.max(1, Number(f.ups) || 1);
+  const perPiece = outputPieces > 0 && calc.billAmount > 0
+    ? Math.round((calc.billAmount / outputPieces) * 100) / 100
     : 0;
 
   /* ── Validate & Save ── */
   const validate = () => {
     const e = {};
     if (!f.customerName) e.customerName = 'Required';
-    if (!f.jobName) e.jobName = 'Required';
-    if (!f.productType) e.productType = 'Required';
     if (!f.quantity || Number(f.quantity) <= 0) e.quantity = 'Required';
     if (!f.paperType) e.paperType = 'Required';
     if (!f.sheetSize) e.sheetSize = 'Required';
@@ -331,8 +324,8 @@ const NewEstimate = () => {
       estimateNo,
       model: 'excel-v1',
       jobDetails: {
-        customerName: f.customerName, jobName: f.jobName, productType: f.productType,
-        quantity: qty, deliveryDate: f.deliveryDate, salesPerson: f.salesPerson, remarks: f.remarks,
+        customerName: f.customerName, salesPerson: f.salesPerson,
+        quantity: qty,
       },
       paperEstimation: {
         paperType: f.paperType, gsm: f.gsm, sheetSize: f.sheetSize,
@@ -341,7 +334,7 @@ const NewEstimate = () => {
         paperCost: calc.paperCost,
       },
       printingEstimation: {
-        printType: f.printType, printMethod: f.printMethod, ups, colors: f.colors,
+        printType: f.printType, ups, colors: f.colors,
         impressions: calc.impressions,
       },
       costing: {
@@ -418,93 +411,40 @@ const NewEstimate = () => {
             <SectionCard title="Job Details" icon={FileText} accent="bg-sky-400">
               <div className="space-y-4">
 
-                <div>
-                  <FieldLabel required>Customer</FieldLabel>
-                  <CustomerCombobox
-                    value={f.customerName}
-                    onChange={v => { set('customerName', v); setErrors(e => ({ ...e, customerName: undefined })); }}
-                    customers={customers}
-                    onAddNew={() => setDlg(d => ({ ...d, customer: true }))}
-                  />
-                  {errors.customerName && <p className="text-xs text-destructive mt-1">{errors.customerName}</p>}
-                </div>
-
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <FieldLabel required>Job Name</FieldLabel>
-                    <Input placeholder="e.g. Wedding Card 500 pcs"
-                      value={f.jobName}
-                      onChange={e => { set('jobName', e.target.value); setErrors(er => ({ ...er, jobName: undefined })); }}
-                      className={errors.jobName ? 'border-destructive' : ''} />
-                    {errors.jobName && <p className="text-xs text-destructive mt-1">{errors.jobName}</p>}
+                    <FieldLabel required>Customer</FieldLabel>
+                    <CustomerCombobox
+                      value={f.customerName}
+                      onChange={v => { set('customerName', v); setErrors(e => ({ ...e, customerName: undefined })); }}
+                      customers={customers}
+                      onAddNew={() => setDlg(d => ({ ...d, customer: true }))}
+                    />
+                    {errors.customerName && <p className="text-xs text-destructive mt-1">{errors.customerName}</p>}
                   </div>
                   <div>
-                    <FieldLabel required>Product Type</FieldLabel>
-                    <div className="flex gap-2">
-                      <NativeSelect
-                        value={f.productType}
-                        onChange={v => { set('productType', v); setErrors(e => ({ ...e, productType: undefined })); }}
-                        placeholder="Select product…"
-                        className={cn('flex-1', errors.productType ? 'border-destructive' : '')}>
-                        {productTypes.map(p => <option key={p} value={p}>{p}</option>)}
-                      </NativeSelect>
-                      <Button type="button" variant="outline" size="icon"
-                        onClick={() => setDlg(d => ({ ...d, product: true }))}>
-                        <Plus className="w-4 h-4" />
-                      </Button>
-                    </div>
-                    {errors.productType && <p className="text-xs text-destructive mt-1">{errors.productType}</p>}
+                    <FieldLabel>R By (Sales Person)</FieldLabel>
+                    <NativeSelect value={f.salesPerson} onChange={v => set('salesPerson', v)} placeholder="Select…">
+                      {SALES_PERSONS.map(s => <option key={s} value={s}>{s}</option>)}
+                    </NativeSelect>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 items-end">
-                  <div className="col-span-2">
-                    <FieldLabel required hint="finished pieces needed">Quantity (Pieces)</FieldLabel>
-                    <NumInput
-                      value={f.quantity}
-                      onChange={v => { set('quantity', v); setErrors(e => ({ ...e, quantity: undefined })); }}
-                      min={1} placeholder="500"
-                      className={errors.quantity ? 'border-destructive' : ''} />
-                    {errors.quantity && <p className="text-xs text-destructive mt-1">{errors.quantity}</p>}
-                    {calc.totalSheets > 0 && (
-                      <p className="text-xs text-muted-foreground mt-1">
-                        = <span className="font-semibold text-foreground">{calc.totalSheets.toLocaleString()}</span> sheets to print
-                        {Number(f.ups) > 1 && <span className="ml-1 text-violet-600">({f.ups} ups)</span>}
-                      </p>
-                    )}
-                  </div>
-                  <div className="col-span-2 flex items-end">
-                    <button
-                      type="button"
-                      onClick={() => setShowMore(v => !v)}
-                      className="flex items-center gap-1.5 text-sm text-indigo-600 hover:text-indigo-700 transition-colors font-medium py-2.5 w-full justify-end sm:justify-start">
-                      {showMore ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                      {showMore ? 'Fewer details' : 'Add delivery & notes'}
-                    </button>
-                  </div>
+                <div>
+                  <FieldLabel required hint="sheets of paper going into the press">Quantity (Sheets)</FieldLabel>
+                  <NumInput
+                    value={f.quantity}
+                    onChange={v => { set('quantity', v); setErrors(e => ({ ...e, quantity: undefined })); }}
+                    min={1} placeholder="500"
+                    className={errors.quantity ? 'border-destructive' : ''} />
+                  {errors.quantity && <p className="text-xs text-destructive mt-1">{errors.quantity}</p>}
+                  {calc.totalSheets > 0 && Number(f.ups) > 1 && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      <span className="font-semibold text-foreground">{calc.totalSheets.toLocaleString()}</span> sheets
+                      {' × '}{f.ups} ups = <span className="font-semibold text-violet-600">{calc.impressions.toLocaleString()} impressions</span>
+                    </p>
+                  )}
                 </div>
-
-                {showMore && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-gray-100">
-                    <div>
-                      <FieldLabel>Delivery Date</FieldLabel>
-                      <input type="date" value={f.deliveryDate}
-                        onChange={e => set('deliveryDate', e.target.value)}
-                        className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2" />
-                    </div>
-                    <div>
-                      <FieldLabel>Sales Person</FieldLabel>
-                      <NativeSelect value={f.salesPerson} onChange={v => set('salesPerson', v)} placeholder="Select…">
-                        {SALES_PERSONS.map(s => <option key={s} value={s}>{s}</option>)}
-                      </NativeSelect>
-                    </div>
-                    <div className="sm:col-span-2">
-                      <FieldLabel>Remarks</FieldLabel>
-                      <Input placeholder="Any special instructions…" value={f.remarks}
-                        onChange={e => set('remarks', e.target.value)} />
-                    </div>
-                  </div>
-                )}
 
               </div>
             </SectionCard>
@@ -613,29 +553,6 @@ const NewEstimate = () => {
                   )}
                 </div>
 
-                {/* Weight info strip */}
-                {calc.weightPerSheetG > 0 && (
-                  <div className="flex items-center gap-4 rounded-xl bg-amber-50/70 border border-amber-100 px-4 py-3 flex-wrap">
-                    <div>
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-amber-700/60 leading-none">Per Sheet</p>
-                      <p className="text-lg font-bold tabular-nums mt-1 leading-none">{calc.weightPerSheetG} g</p>
-                    </div>
-                    <div className="w-px h-8 bg-amber-200 hidden sm:block" />
-                    <div>
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-amber-700/60 leading-none">Total Weight</p>
-                      <p className="text-lg font-bold tabular-nums mt-1 leading-none">{calc.totalWeightKg} kg</p>
-                    </div>
-                    {f.paperSupply !== 'PP' && (
-                      <>
-                        <div className="w-px h-8 bg-amber-200 hidden sm:block" />
-                        <div>
-                          <p className="text-[10px] font-bold uppercase tracking-widest text-amber-700/60 leading-none">Rate</p>
-                          <p className="text-lg font-bold tabular-nums mt-1 leading-none">₹{f.ratePerKg}/kg</p>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
 
               </div>
             </SectionCard>
@@ -662,78 +579,25 @@ const NewEstimate = () => {
                   </div>
                 </div>
 
-                {/* Print Method — defines how impressions are counted */}
-                <div>
-                  <FieldLabel hint="affects ink & impression cost">Cut Method</FieldLabel>
-                  <div className="grid grid-cols-2 gap-2">
-                    {[
-                      {
-                        val: 'print-cut',
-                        title: 'Print → Cut',
-                        desc: 'Print multiple pieces per sheet, cut after. Fewer press passes.',
-                        icon: '⬜→✂️',
-                      },
-                      {
-                        val: 'cut-print',
-                        title: 'Cut → Print',
-                        desc: 'Cut paper to size first, then each piece goes through the press.',
-                        icon: '✂️→🖨️',
-                      },
-                    ].map(opt => (
-                      <button key={opt.val} type="button"
-                        onClick={() => set('printMethod', opt.val)}
-                        className={cn(
-                          'flex flex-col items-start text-left gap-1 px-3.5 py-3 rounded-xl border-2 transition-all',
-                          f.printMethod === opt.val
-                            ? 'border-violet-500 bg-violet-50 text-violet-900'
-                            : 'border-gray-200 bg-white text-muted-foreground hover:border-gray-300',
-                        )}>
-                        <span className="text-sm font-bold leading-tight">{opt.title}</span>
-                        <span className="text-[11px] leading-snug opacity-80">{opt.desc}</span>
-                      </button>
-                    ))}
-                  </div>
-                  {f.printMethod === 'cut-print' && calc.impressions > 0 && (
-                    <p className="mt-2 text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2 border border-amber-100">
-                      Each of the <strong>{Number(f.quantity).toLocaleString()}</strong> pieces is a separate press pass —{' '}
-                      <strong>{calc.impressions.toLocaleString()}</strong> impressions total.
-                    </p>
-                  )}
-                  {f.printMethod === 'print-cut' && calc.totalSheets > 0 && (
-                    <p className="mt-2 text-xs text-emerald-700 bg-emerald-50 rounded-lg px-3 py-2 border border-emerald-100">
-                      <strong>{calc.totalSheets.toLocaleString()}</strong> press passes for{' '}
-                      <strong>{Number(f.quantity).toLocaleString()}</strong> pieces ({f.ups} up) — more efficient.
-                    </p>
-                  )}
-                </div>
-
                 {/* UPS selector */}
                 <div>
-                  <FieldLabel hint={f.printMethod === 'cut-print' ? 'pieces cut from each sheet' : 'pieces printed per sheet'}>
-                    {f.printMethod === 'cut-print' ? 'Cut from Sheet' : 'Up on Sheet (UPS)'}
-                  </FieldLabel>
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <NumInput
-                      value={f.ups}
-                      onChange={v => { set('ups', Math.max(1, Number(v) || 1)); setAppliedUps(null); }}
-                      min={1} max={64} className="w-24" />
-                    <div className="flex gap-1.5">
-                      {[1, 2, 4, 6].map(n => (
-                        <button key={n} type="button"
-                          onClick={() => { set('ups', n); setAppliedUps(null); }}
-                          className={cn(
-                            'w-9 h-9 rounded-lg text-sm font-bold border-2 transition-all',
-                            f.ups === n
-                              ? 'border-violet-500 bg-violet-50 text-violet-700'
-                              : 'border-gray-200 bg-white text-muted-foreground hover:border-gray-300',
-                          )}>
-                          {n}
-                        </button>
-                      ))}
-                    </div>
-                    {calc.totalSheets > 0 && (
-                      <p className="text-xs text-muted-foreground">
-                        = <span className="font-semibold text-foreground">{calc.totalSheets.toLocaleString()}</span> sheets
+                  <FieldLabel hint="pieces printed per sheet">Up on Sheet (UPS)</FieldLabel>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {[1, 2, 4, 6].map(n => (
+                      <button key={n} type="button"
+                        onClick={() => { set('ups', n); setAppliedUps(null); }}
+                        className={cn(
+                          'w-12 h-10 rounded-lg text-sm font-bold border-2 transition-all',
+                          f.ups === n
+                            ? 'border-violet-500 bg-violet-50 text-violet-700'
+                            : 'border-gray-200 bg-white text-muted-foreground hover:border-gray-300',
+                        )}>
+                        {n}
+                      </button>
+                    ))}
+                    {calc.totalSheets > 0 && calc.impressions > calc.totalSheets && (
+                      <p className="text-xs text-muted-foreground ml-1">
+                        → <span className="font-semibold text-violet-600">{calc.impressions.toLocaleString()} impressions</span>
                       </p>
                     )}
                   </div>
@@ -745,21 +609,18 @@ const NewEstimate = () => {
                 {/* Colors */}
                 <div>
                   <FieldLabel hint="e.g. 4 for CMYK, 1 for black only">No. of Colors</FieldLabel>
-                  <div className="flex items-center gap-3">
-                    <NumInput value={f.colors} onChange={v => set('colors', v)} min={1} max={8} className="w-28" />
-                    <div className="flex gap-1.5">
-                      {[1, 2, 4].map(n => (
-                        <button key={n} type="button" onClick={() => set('colors', n)}
-                          className={cn(
-                            'w-9 h-9 rounded-lg text-sm font-bold border-2 transition-all',
-                            f.colors === n
-                              ? 'border-violet-500 bg-violet-50 text-violet-700'
-                              : 'border-gray-200 bg-white text-muted-foreground hover:border-gray-300',
-                          )}>
-                          {n}
-                        </button>
-                      ))}
-                    </div>
+                  <div className="flex items-center gap-1.5">
+                    {[1, 2, 4].map(n => (
+                      <button key={n} type="button" onClick={() => set('colors', n)}
+                        className={cn(
+                          'w-12 h-10 rounded-lg text-sm font-bold border-2 transition-all',
+                          f.colors === n
+                            ? 'border-violet-500 bg-violet-50 text-violet-700'
+                            : 'border-gray-200 bg-white text-muted-foreground hover:border-gray-300',
+                        )}>
+                        {n}
+                      </button>
+                    ))}
                   </div>
                 </div>
 
@@ -973,27 +834,6 @@ const NewEstimate = () => {
               setNewCustomer({ name: '', phone: '', email: '' });
               setDlg(d => ({ ...d, customer: false }));
             }}>Add Customer</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* ═══ Add Product Type Dialog ═══ */}
-      <Dialog open={dlg.product} onOpenChange={o => setDlg(d => ({ ...d, product: o }))}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader><DialogTitle>Add Product Type</DialogTitle></DialogHeader>
-          <div className="py-2">
-            <FieldLabel required>Name</FieldLabel>
-            <Input placeholder="e.g. Wedding Card" value={newProductType}
-              onChange={e => setNewProductType(e.target.value)} />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDlg(d => ({ ...d, product: false }))}>Cancel</Button>
-            <Button disabled={!newProductType.trim()} onClick={() => {
-              addProductType(newProductType.trim());
-              set('productType', newProductType.trim());
-              setNewProductType('');
-              setDlg(d => ({ ...d, product: false }));
-            }}>Add</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

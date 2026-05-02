@@ -115,6 +115,46 @@ export function PaperSizeCalculatorModal({ open, onClose, onApply, calcMargins =
             </div>
           </div>
 
+          {/* Will you cut the paper? */}
+          <div className="flex items-center justify-between rounded-xl border-2 px-4 py-3 transition-colors"
+            style={{ borderColor: willCut ? '#8b5cf6' : '#e5e7eb', background: willCut ? '#f5f3ff' : '#f9fafb' }}>
+            <div>
+              <p className="text-sm font-bold text-foreground">Will you cut the paper before printing?</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {willCut
+                  ? 'Recommending the smallest sheet that fits — cut from a parent sheet (cheaper per job).'
+                  : 'Recommending the most efficient full press sheet (best for N-up print → cut workflow).'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const next = !willCut;
+                setWillCut(next);
+                if (calcResults) {
+                  const recs = calcResults.recommendations ?? [];
+                  const sorted = next
+                    ? [...recs].sort((a, b) => {
+                        const sa = STANDARD_SIZES.find(s => s.name === a.size);
+                        const sb = STANDARD_SIZES.find(s => s.name === b.size);
+                        return (sa?.width ?? 0) * (sa?.height ?? 0) - (sb?.width ?? 0) * (sb?.height ?? 0);
+                      })
+                    : recs;
+                  setSelectedCalcRec(sorted[0] ?? null);
+                }
+              }}
+              className={[
+                'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ml-4',
+                willCut ? 'bg-violet-500' : 'bg-gray-200',
+              ].join(' ')}
+            >
+              <span className={[
+                'pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200',
+                willCut ? 'translate-x-5' : 'translate-x-0',
+              ].join(' ')} />
+            </button>
+          </div>
+
           {/* Input row */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 items-end">
             <div className="space-y-1.5">
@@ -189,7 +229,9 @@ export function PaperSizeCalculatorModal({ open, onClose, onApply, calcMargins =
                 <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
                   Recommendations — click to preview:
                 </p>
-                {calcResults.recommendations.map((rec, i) => (
+                {displayRecs.map((rec, i) => {
+                  const cutSrc = willCut ? CUT_SOURCES[rec.size] : null;
+                  return (
                   <div
                     key={rec.size}
                     onClick={() => setSelectedCalcRec(rec)}
@@ -207,12 +249,17 @@ export function PaperSizeCalculatorModal({ open, onClose, onApply, calcMargins =
                       <div className="flex items-center gap-1.5 flex-wrap">
                         {i === 0 && (
                           <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold bg-emerald-50 text-emerald-600">
-                            Best
+                            {willCut ? 'Best (Cut)' : 'Best'}
                           </span>
                         )}
                         {selectedCalcRec?.size === rec.size && (
                           <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold bg-primary/10 text-primary">
                             Selected
+                          </span>
+                        )}
+                        {cutSrc && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold bg-violet-50 text-violet-600">
+                            ✂ from {cutSrc.parent} ×{cutSrc.qty}
                           </span>
                         )}
                         <p className="text-sm font-semibold text-foreground">{rec.size}</p>
@@ -238,10 +285,14 @@ export function PaperSizeCalculatorModal({ open, onClose, onApply, calcMargins =
                         </div>
                       </div>
                     </div>
-                    {/* Dimensions */}
-                    <p className="text-xs text-muted-foreground mt-1">{rec.dimensions}{rec.dimensionsInch ? ` · ${rec.dimensionsInch}` : ''}</p>
+                    {/* Dimensions + cut hint */}
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {rec.dimensions}{rec.dimensionsInch ? ` · ${rec.dimensionsInch}` : ''}
+                      {cutSrc && <span className="ml-2 text-violet-600">{cutSrc.note}</span>}
+                    </p>
                   </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Visualizer */}
