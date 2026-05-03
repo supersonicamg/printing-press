@@ -33,15 +33,31 @@ export const UNIT_CONVERSIONS = {
 };
 
 // Default print imposition margins (all in mm).
-// Indian offset press industry-standard defaults; users can override in the UI.
 export const DEFAULT_MARGINS = {
-  bleed: 3,           // mm — standard 3mm bleed on each side of the item
-  gutter: 3,          // mm — 3mm gap between items on the sheet
-  gripperLeft: 10,    // mm — lead edge gripper (mechanical clamp area)
-  gripperRight: 5,    // mm — trail edge margin
-  gripperTop: 5,      // mm — top edge margin
-  gripperBottom: 5,   // mm — bottom edge margin
+  bleed: 1,           // mm — bleed on each side of the item
+  gutter: 1,          // mm — gap between items on the sheet
+  gripperLeft: 1,     // mm — lead edge margin
+  gripperRight: 1,    // mm — trail edge margin
+  gripperTop: 1,      // mm — top edge margin
+  gripperBottom: 1,   // mm — bottom edge margin
 };
+
+// Parent sheets that are purchased and cut in half to produce working (press) sheets.
+// The printer buys `parent`, cuts along the long axis → `cuts` pieces of `child`.
+export const CUT_PAIRS = [
+  {
+    parent: '23x36',
+    child: '18x23',
+    cuts: 2,
+    description: 'Cut 23×36 in half → 2× 18×23',
+  },
+  {
+    parent: '25x36',
+    child: '18x25',
+    cuts: 2,
+    description: 'Cut 25×36 in half → 2× 18×25',
+  },
+];
 
 /**
  * Convert any unit to mm
@@ -338,55 +354,104 @@ export const getRecommendations = (inputSize, unit = 'inch') => {
 
 /**
  * Get recommendations from width/height values directly.
- * @param {number} width    - finished item width in the given unit
- * @param {number} height   - finished item height in the given unit
- * @param {string} [unit]   - 'mm' | 'cm' | 'inch' | 'm'
+ * @param {number} width     - finished item width in the given unit
+ * @param {number} height    - finished item height in the given unit
+ * @param {string} [unit]    - 'mm' | 'cm' | 'inch' | 'm'
  * @param {object} [margins] - optional margin overrides (keys from DEFAULT_MARGINS)
+ * @param {boolean} [willCut] - true → evaluate cut-sheet options (printer buys parent, cuts in half)
  */
-export const getRecommendationsFromDimensions = (width, height, unit = 'mm', margins = {}) => {
+export const getRecommendationsFromDimensions = (width, height, unit = 'mm', margins = {}, willCut = false) => {
   const widthMm  = convertToMm(width,  unit);
   const heightMm = convertToMm(height, unit);
-  
-  const options = getSizeOptions(widthMm, heightMm, margins);
-  
-  if (options.length === 0) {
-    return { 
-      error: 'No suitable standard sizes found. Item may be too large.',
-      customerSize: { width: widthMm, height: heightMm }
+
+  let rawOptions;
+
+  if (willCut) {
+    // ── Cut mode ────────────────────────────────────────────────────────────
+    // For each parent→child cut pair, calculate how many items fit on the
+    // cut (child) sheet.  Report both per-cut-sheet ups AND effective ups
+    // per purchased parent sheet (ups × cuts).
+    rawOptions = [];
+    for (const pair of CUT_PAIRS) {
+      const childSize = STANDARD_SIZES.find(s => s.name === pair.child);
+      if (!childSize) continue;
+      const fit = calculateFit(widthMm, heightMm, childSize.width, childSize.height, margins);
+      if (fit.ups > 0) {
+        const eff = parseFloat((100 - fit.wastePercent).toFixed(1));
+        rawOptions.push({
+          ...childSize,
+          ups: fit.ups,
+          effectiveUps: fit.ups * pair.cuts,
+          parentSheet: pair.parent,
+          cuts: pair.cuts,
+          cutDescription: pair.description,
+          isCut: true,
+          wastePercent: fit.wastePercent,
+          efficiency: eff,
+          layout: fit.layout,
+          gridLayout: fit.gridLayout,
+          usedArea: fit.usedArea,
+          totalArea: fit.totalArea,
+          wasteArea: fit.wasteArea,
+        });
+      }
+    }
+    // Best cut option = highest efficiency, then most effective ups per parent
+    rawOptions.sort((a, b) => b.efficiency - a.efficiency || b.effectiveUps - a.effectiveUps);
+  } else {
+    // ── Direct (no-cut) mode ────────────────────────────────────────────────
+    rawOptions = getSizeOptions(widthMm, heightMm, margins).map(opt => ({
+      ...opt,
+      effectiveUps: opt.ups,
+      parentSheet: null,
+      cuts: 1,
+      cutDescription: null,
+      isCut: false,
+    }));
+  }
+
+  if (rawOptions.length === 0) {
+    return {
+      error: willCut
+        ? 'No suitable cut-sheet options found. The print size may be too large for any cut sheet.'
+        : 'No suitable standard sizes found. Item may be too large.',
+      customerSize: {
+        width: Math.round(widthMm * 10) / 10,
+        height: Math.round(heightMm * 10) / 10,
+      },
     };
   }
-  
-  // Get top 5 options
-  const recommendations = options.slice(0, 5).map((opt, index) => ({
+
+  const recommendations = rawOptions.slice(0, 5).map((opt, index) => ({
     rank: index + 1,
     size: opt.name,
     dimensions: `${opt.width} × ${opt.height} mm`,
     dimensionsInch: `${mmToInches(opt.width).toFixed(1)} × ${mmToInches(opt.height).toFixed(1)} inch`,
     ups: opt.ups,
+    effectiveUps: opt.effectiveUps,
+    parentSheet: opt.parentSheet ?? null,
+    cuts: opt.cuts ?? 1,
+    cutDescription: opt.cutDescription ?? null,
+    isCut: opt.isCut ?? false,
     wastePercent: opt.wastePercent,
-    efficiency: opt.efficiency.toFixed(1),
+    efficiency: typeof opt.efficiency === 'number' ? opt.efficiency.toFixed(1) : String(opt.efficiency),
     layout: opt.layout,
     gridLayout: opt.gridLayout,
     usedArea: opt.usedArea,
     totalArea: opt.totalArea,
     wasteArea: opt.wasteArea,
-    reason: index === 0 
-      ? 'Best efficiency - Minimum wastage' 
-      : index === 1 
-        ? 'Alternative option'
-        : 'Other option'
   }));
-  
+
   return {
     customerSize: {
       width: Math.round(widthMm * 10) / 10,
       height: Math.round(heightMm * 10) / 10,
       widthInch: mmToInches(widthMm).toFixed(2),
       heightInch: mmToInches(heightMm).toFixed(2),
-      inInches: `${mmToInches(widthMm).toFixed(2)} × ${mmToInches(heightMm).toFixed(2)} inches`
+      inInches: `${mmToInches(widthMm).toFixed(2)} × ${mmToInches(heightMm).toFixed(2)} inches`,
     },
     recommendations,
-    best: recommendations[0]
+    best: recommendations[0],
   };
 };
 
@@ -399,6 +464,7 @@ export default {
   convertToMm,
   convertFromMm,
   STANDARD_SIZES,
+  CUT_PAIRS,
   UNIT_CONVERSIONS,
   DEFAULT_MARGINS,
   inchesToMm,

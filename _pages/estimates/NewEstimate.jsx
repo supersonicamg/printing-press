@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ArrowLeft, Save, Plus, Search, Check, FileText,
-  Printer, Scissors, IndianRupee, Phone, Mail, RotateCcw, ChevronDown, ChevronUp,
+  Printer, Scissors, IndianRupee, Phone, Mail, RotateCcw, ChevronDown,
 } from 'lucide-react';
 import { useEstimate } from '../../context/EstimateContext';
 import { useMasterData } from '../../context/MasterDataContext';
@@ -51,40 +51,66 @@ const NativeSelect = ({ value, onChange, children, className, placeholder }) => 
   </select>
 );
 
-/* ─── Primitive: FieldLabel ─── */
+/* ─── FieldLabel ─── */
 const FieldLabel = ({ children, required, hint }) => (
   <div className="flex items-center justify-between mb-1.5">
-    <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+    <label className="text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">
       {children}{required && <span className="text-destructive ml-0.5">*</span>}
     </label>
-    {hint && <span className="text-xs text-muted-foreground/70 normal-case">{hint}</span>}
+    {hint && <span className="text-[11px] text-muted-foreground/60 normal-case">{hint}</span>}
   </div>
 );
 
 /* ─── Section Card ─── */
-const SectionCard = ({ title, icon: Icon, accent, children }) => (
-  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-    <div className="flex items-center gap-2.5 px-5 py-3.5 border-b border-gray-100">
-      <div className={cn('w-1.5 h-5 rounded-full shrink-0', accent)} />
-      <Icon className="w-4 h-4 text-gray-400 shrink-0" />
-      <span className="text-sm font-semibold text-gray-700">{title}</span>
+const SectionCard = ({ title, icon: Icon, children }) => (
+  <div className="bg-background rounded-xl border border-border overflow-hidden">
+    <div className="flex items-center gap-2.5 px-5 py-3.5 border-b border-border">
+      <Icon className="w-4 h-4 text-muted-foreground shrink-0" />
+      <span className="text-sm font-semibold text-foreground">{title}</span>
     </div>
     <div className="p-5">{children}</div>
   </div>
 );
 
+/* ─── Segmented Control ─── */
+const SegmentedControl = ({ options, value, onChange, className }) => (
+  <div className={cn('flex rounded-lg border border-border overflow-hidden', className)}>
+    {options.map((opt, i) => {
+      const val = typeof opt === 'object' ? opt.value : opt;
+      const label = typeof opt === 'object' ? opt.label : opt;
+      return (
+        <React.Fragment key={val}>
+          {i > 0 && <div className="w-px bg-border shrink-0" />}
+          <button
+            type="button"
+            onClick={() => onChange(val)}
+            className={cn(
+              'flex-1 px-4 py-2.5 text-sm font-medium text-center transition-colors duration-150',
+              val === value
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-background text-muted-foreground hover:text-foreground hover:bg-muted/50',
+            )}
+          >
+            {label}
+          </button>
+        </React.Fragment>
+      );
+    })}
+  </div>
+);
+
 /* ─── Toggle Switch ─── */
-const Toggle = ({ checked, onChange, label, sublabel, activeColor = 'bg-violet-500' }) => (
+const Toggle = ({ checked, onChange, label, sublabel }) => (
   <div className="flex items-center justify-between gap-4">
     <div className="min-w-0">
-      <p className="text-sm font-semibold text-foreground">{label}</p>
+      <p className="text-sm font-medium text-foreground">{label}</p>
       {sublabel && <p className="text-xs text-muted-foreground mt-0.5">{sublabel}</p>}
     </div>
     <button
       type="button" onClick={() => onChange(!checked)}
       className={cn(
         'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200',
-        checked ? activeColor : 'bg-gray-200',
+        checked ? 'bg-primary' : 'bg-muted',
       )}
     >
       <span className={cn(
@@ -99,10 +125,10 @@ const Toggle = ({ checked, onChange, label, sublabel, activeColor = 'bg-violet-5
 const CostRow = ({ label, value, sub }) => (
   <div className="flex items-center justify-between gap-2">
     <div className="min-w-0">
-      <p className="text-sm text-gray-500 truncate">{label}</p>
+      <p className="text-sm text-muted-foreground truncate">{label}</p>
       {sub && <p className="text-[10px] font-semibold leading-none mt-0.5 text-amber-600">{sub}</p>}
     </div>
-    <p className="text-sm font-semibold tabular-nums shrink-0">{value}</p>
+    <p className="text-sm font-medium tabular-nums shrink-0">{value}</p>
   </div>
 );
 
@@ -133,8 +159,8 @@ const CustomerCombobox = ({ value, onChange, customers, onAddNew }) => {
         <ChevronDown className="w-4 h-4 opacity-40 shrink-0 ml-2" />
       </button>
       {open && (
-        <div className="absolute z-50 mt-1 w-full rounded-xl border border-gray-100 bg-white shadow-xl overflow-hidden">
-          <div className="p-2 border-b border-gray-100">
+        <div className="absolute z-50 mt-1 w-full rounded-xl border border-border bg-background shadow-lg overflow-hidden">
+          <div className="p-2 border-b border-border">
             <div className="relative">
               <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-muted-foreground" />
               <input autoFocus placeholder="Search customers…" value={q} onChange={e => setQ(e.target.value)}
@@ -147,7 +173,7 @@ const CustomerCombobox = ({ value, onChange, customers, onAddNew }) => {
               : filtered.map(c => (
                 <button key={c.id} type="button"
                   onClick={() => { onChange(c.name); setOpen(false); setQ(''); }}
-                  className="w-full text-left px-3 py-2.5 hover:bg-gray-50 flex items-center justify-between transition-colors">
+                  className="w-full text-left px-3 py-2.5 hover:bg-muted/50 flex items-center justify-between transition-colors duration-150">
                   <div>
                     <p className="text-sm font-medium">{c.name}</p>
                     {c.phone && <p className="text-xs text-muted-foreground">{c.phone}</p>}
@@ -157,9 +183,9 @@ const CustomerCombobox = ({ value, onChange, customers, onAddNew }) => {
               ))
             }
           </div>
-          <div className="p-2 border-t border-gray-100">
+          <div className="p-2 border-t border-border">
             <button type="button" onClick={() => { setOpen(false); onAddNew(); }}
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm font-semibold text-primary rounded-md hover:bg-primary/5 transition-colors">
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-primary rounded-md hover:bg-primary/5 transition-colors duration-150">
               <Plus className="w-3.5 h-3.5" />Add new customer
             </button>
           </div>
@@ -222,7 +248,6 @@ const NewEstimate = () => {
 
   /* ── Profit (fixed ₹) ── */
   const [profit, setProfit] = useState(0);
-  const [showMore, setShowMore] = useState(false);
 
   /* ── Computed values ── */
   const [calc, setCalc] = useState({
@@ -382,52 +407,50 @@ const NewEstimate = () => {
     setF(DEFAULTS);
     setProfit(0);
     setErrors({});
-    setShowMore(false);
     setAppliedUps(null);
     setEstimateNo(generateEstimateId ? generateEstimateId() : `EST-${Date.now()}`);
   };
 
   /* ═══ RENDER ═══ */
   return (
-    <div className="min-h-screen bg-slate-50/80 pb-20 xl:pb-6">
+    <div className="min-h-screen bg-muted/20 pb-20 xl:pb-6">
 
-      {/* ── Sticky Header ── */}
-      <div className="sticky top-0 z-30 bg-white/95 backdrop-blur-sm border-b border-gray-100 shadow-sm">
+      {/* Sticky Header */}
+      <div className="sticky top-0 z-30 bg-background/95 backdrop-blur-sm border-b border-border">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <button type="button" onClick={() => router.push('/estimates')}
-              className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors shrink-0">
+              className="p-1.5 rounded-lg hover:bg-muted/60 transition-colors shrink-0">
               <ArrowLeft className="w-4 h-4" />
             </button>
             <div className="min-w-0">
-              <h1 className="text-sm font-bold leading-tight">New Estimate</h1>
-              <p className="text-xs font-mono font-semibold text-indigo-600 leading-tight">{estimateNo || '...'}</p>
+              <h1 className="text-sm font-semibold text-foreground leading-tight">New Estimate</h1>
+              <p className="text-xs font-mono text-primary leading-tight">{estimateNo || '...'}</p>
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <button type="button" onClick={handleReset}
-              className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-2.5 py-1.5 rounded-lg hover:bg-gray-100">
+              className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-2.5 py-1.5 rounded-lg hover:bg-muted/50">
               <RotateCcw className="w-3 h-3" />Reset
             </button>
             <Button variant="outline" size="sm" onClick={() => router.push('/estimates')}>Cancel</Button>
-            <Button size="sm" onClick={handleSave} className="gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white">
+            <Button size="sm" onClick={handleSave} className="gap-1.5">
               <Save className="w-3.5 h-3.5" />Save
             </Button>
           </div>
         </div>
       </div>
 
-      {/* ── Body ── */}
+      {/* Body */}
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6">
         <div className="flex flex-col xl:flex-row gap-5 items-start">
 
-          {/* ═══ Form Column ═══ */}
+          {/* Form Column */}
           <div className="flex-1 min-w-0 space-y-4">
 
-            {/* ── 1. Job Details ── */}
-            <SectionCard title="Job Details" icon={FileText} accent="bg-sky-400">
+            {/* 1. Job Details */}
+            <SectionCard title="Job Details" icon={FileText}>
               <div className="space-y-4">
-
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <FieldLabel required>Customer</FieldLabel>
@@ -440,7 +463,7 @@ const NewEstimate = () => {
                     {errors.customerName && <p className="text-xs text-destructive mt-1">{errors.customerName}</p>}
                   </div>
                   <div>
-                    <FieldLabel>R By (Sales Person)</FieldLabel>
+                    <FieldLabel>Sales Person</FieldLabel>
                     <NativeSelect value={f.salesPerson} onChange={v => set('salesPerson', v)} placeholder="Select…">
                       {SALES_PERSONS.map(s => <option key={s} value={s}>{s}</option>)}
                     </NativeSelect>
@@ -448,7 +471,7 @@ const NewEstimate = () => {
                 </div>
 
                 <div>
-                  <FieldLabel required hint="sheets of paper going into the press">Quantity (Sheets)</FieldLabel>
+                  <FieldLabel required hint="sheets entering the press">Quantity</FieldLabel>
                   <NumInput
                     value={f.quantity}
                     onChange={v => { set('quantity', v); setErrors(e => ({ ...e, quantity: undefined })); }}
@@ -456,49 +479,37 @@ const NewEstimate = () => {
                     className={errors.quantity ? 'border-destructive' : ''} />
                   {errors.quantity && <p className="text-xs text-destructive mt-1">{errors.quantity}</p>}
                   {calc.totalSheets > 0 && f.cut && (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      <span className="font-semibold text-foreground">{calc.totalSheets.toLocaleString()}</span> sheets cut in half
-                      {' → '}<span className="font-semibold text-emerald-600">{calc.impressions.toLocaleString()} impressions</span>
+                    <p className="text-xs text-muted-foreground mt-1.5">
+                      {calc.totalSheets.toLocaleString()} sheets cut in half
+                      <span className="mx-1.5 text-border">·</span>
+                      <span className="font-medium text-foreground">{calc.impressions.toLocaleString()} impressions</span>
                     </p>
                   )}
                 </div>
-
               </div>
             </SectionCard>
 
-            {/* ── 2. Paper Setup ── */}
-            <SectionCard title="Paper Setup" icon={Scissors} accent="bg-amber-400">
+            {/* 2. Paper Setup */}
+            <SectionCard title="Paper Setup" icon={Scissors}>
               <div className="space-y-4">
 
-                {/* Supply toggle */}
                 <div>
                   <FieldLabel>Paper Supply</FieldLabel>
-                  <div className="grid grid-cols-2 gap-2">
-                    {[
-                      { val: 'DP', label: 'DP', sub: 'Our paper' },
-                      { val: 'PP', label: 'PP', sub: 'Customer supplies' },
-                    ].map(opt => (
-                      <button key={opt.val} type="button"
-                        onClick={() => set('paperSupply', opt.val)}
-                        className={cn(
-                          'flex flex-col items-center py-3 px-4 rounded-xl border-2 transition-all',
-                          f.paperSupply === opt.val
-                            ? 'border-amber-500 bg-amber-50 text-amber-800'
-                            : 'border-gray-200 bg-white text-muted-foreground hover:border-gray-300',
-                        )}>
-                        <span className="text-base font-black">{opt.label}</span>
-                        <span className="text-xs font-normal mt-0.5 opacity-70">{opt.sub}</span>
-                      </button>
-                    ))}
-                  </div>
+                  <SegmentedControl
+                    options={[
+                      { value: 'DP', label: 'DP — Our paper' },
+                      { value: 'PP', label: 'PP — Customer supplies' },
+                    ]}
+                    value={f.paperSupply}
+                    onChange={v => set('paperSupply', v)}
+                  />
                   {f.paperSupply === 'PP' && (
-                    <p className="mt-2 text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2 border border-amber-200">
-                      Paper cost = ₹0.00 — customer is supplying the paper.
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Paper cost will be ₹0.00 — customer is supplying the paper.
                     </p>
                   )}
                 </div>
 
-                {/* Paper Type + GSM + Rate */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <div className="col-span-2">
                     <FieldLabel required>Paper Type</FieldLabel>
@@ -536,19 +547,18 @@ const NewEstimate = () => {
                   <div>
                     <FieldLabel hint="₹/kg">Rate / Kg</FieldLabel>
                     <NumInput value={f.ratePerKg} onChange={v => set('ratePerKg', v)} min={0} step={0.5}
-                      className={f.paperSupply === 'PP' ? 'opacity-50' : ''} />
+                      className={f.paperSupply === 'PP' ? 'opacity-40' : ''} />
                   </div>
                 </div>
 
-                {/* Sheet Size */}
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <FieldLabel required>Sheet Size</FieldLabel>
                     <button
                       type="button"
                       onClick={() => setShowCalc(true)}
-                      className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors">
-                      <span>&#9728;</span> Smart Size Finder
+                      className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-primary border border-primary/30 bg-primary/5 rounded-lg hover:bg-primary/10 transition-colors duration-150">
+                      Smart Size Finder
                     </button>
                   </div>
                   <NativeSelect value={f.sheetSize} placeholder="Select sheet size…"
@@ -557,68 +567,54 @@ const NewEstimate = () => {
                     {SHEET_SIZE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </NativeSelect>
                   {errors.sheetSize && <p className="text-xs text-destructive mt-1">{errors.sheetSize}</p>}
-
-                  {/* UPS info badge shown after calculator is applied */}
                   {appliedUps !== null && (
-                    <div className="mt-2 flex items-center gap-2 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2">
-                      <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                      <p className="text-xs text-emerald-800">
-                        Smart Size applied · <span className="font-bold">{appliedUps} up{appliedUps !== 1 ? 's' : ''}</span> per sheet
-                        {calc.totalSheets > 0 && <> · <span className="font-bold">{calc.totalSheets.toLocaleString()}</span> sheets to print</>}
+                    <div className="mt-2 flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2">
+                      <Check className="w-3.5 h-3.5 text-primary shrink-0" />
+                      <p className="text-xs text-foreground">
+                        Smart Size applied — <span className="font-semibold">{appliedUps} up{appliedUps !== 1 ? 's' : ''}</span> per sheet
+                        {calc.totalSheets > 0 && <> · {calc.totalSheets.toLocaleString()} sheets</>}
                       </p>
                     </div>
                   )}
                 </div>
 
-
               </div>
             </SectionCard>
 
-            {/* ── 3. Print & Rates ── */}
-            <SectionCard title="Print & Rates" icon={Printer} accent="bg-violet-400">
+            {/* 3. Print & Rates */}
+            <SectionCard title="Print & Rates" icon={Printer}>
               <div className="space-y-5">
 
-                {/* Print Type */}
                 <div>
                   <FieldLabel>Print Type</FieldLabel>
-                  <div className="inline-flex rounded-xl border border-gray-200 bg-gray-50/80 p-1 gap-1">
-                    {['Single Side', 'Both Side'].map(opt => (
-                      <button key={opt} type="button" onClick={() => set('printType', opt)}
-                        className={cn(
-                          'px-5 py-2 rounded-lg text-sm font-semibold transition-all',
-                          f.printType === opt
-                            ? 'bg-white shadow-sm text-violet-700 border border-violet-200'
-                            : 'text-muted-foreground hover:text-foreground',
-                        )}>
-                        {opt}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Cut toggle */}
-                <div>
-                  <FieldLabel hint="23×36 cut in half → each sheet gives 2 pieces → impressions × 2">Cut Sheet?</FieldLabel>
-                  <Toggle
-                    checked={f.cut}
-                    onChange={v => set('cut', v)}
-                    label="Cut"
-                    sublabel={f.cut ? 'Sheet cut in half — impressions doubled' : 'No cut — 1 sheet = 1 piece'}
-                    activeColor="bg-emerald-500"
+                  <SegmentedControl
+                    options={['Single Side', 'Both Side']}
+                    value={f.printType}
+                    onChange={v => set('printType', v)}
+                    className="max-w-xs"
                   />
                 </div>
 
-                {/* Colors */}
                 <div>
-                  <FieldLabel hint="e.g. 4 for CMYK, 1 for black only">No. of Colors</FieldLabel>
+                  <FieldLabel hint="sheet cut in half → pieces × 2">Cut Sheet</FieldLabel>
+                  <Toggle
+                    checked={f.cut}
+                    onChange={v => set('cut', v)}
+                    label="Cut in half"
+                    sublabel={f.cut ? 'Each sheet yields 2 pieces — impressions doubled' : 'No cut — 1 sheet = 1 piece'}
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel hint="e.g. 4 for CMYK">Colors</FieldLabel>
                   <div className="flex items-center gap-1.5">
                     {[1, 2, 4].map(n => (
                       <button key={n} type="button" onClick={() => set('colors', n)}
                         className={cn(
-                          'w-12 h-10 rounded-lg text-sm font-bold border-2 transition-all',
+                          'w-12 h-10 rounded-lg text-sm font-semibold border transition-colors duration-150',
                           f.colors === n
-                            ? 'border-violet-500 bg-violet-50 text-violet-700'
-                            : 'border-gray-200 bg-white text-muted-foreground hover:border-gray-300',
+                            ? 'border-primary bg-primary/5 text-primary'
+                            : 'border-border bg-background text-muted-foreground hover:border-primary/40',
                         )}>
                         {n}
                       </button>
@@ -626,12 +622,11 @@ const NewEstimate = () => {
                   </div>
                 </div>
 
-                {/* Rate Configuration */}
                 <div>
                   <div className="flex items-center gap-3 mb-4">
-                    <div className="flex-1 h-px bg-gray-100" />
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Rate Configuration</span>
-                    <div className="flex-1 h-px bg-gray-100" />
+                    <div className="flex-1 h-px bg-border" />
+                    <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">Rate Configuration</span>
+                    <div className="flex-1 h-px bg-border" />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
@@ -651,10 +646,9 @@ const NewEstimate = () => {
               </div>
             </SectionCard>
 
-            {/* ── 4. Payment Details ── */}
-            <SectionCard title="Payment Details" icon={IndianRupee} accent="bg-emerald-400">
+            {/* 4. Payment Details */}
+            <SectionCard title="Payment Details" icon={IndianRupee}>
               <div className="space-y-4">
-
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <FieldLabel hint="₹ received so far">Received Payment</FieldLabel>
@@ -670,69 +664,58 @@ const NewEstimate = () => {
 
                 <div>
                   <FieldLabel>Payment Mode</FieldLabel>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {['ONLINE', 'CASH', 'CHEQUE'].map(mode => (
-                      <button key={mode} type="button"
-                        onClick={() => set('paymentMode', mode)}
-                        className={cn(
-                          'px-5 py-2 rounded-lg text-sm font-bold border-2 transition-all',
-                          f.paymentMode === mode
-                            ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
-                            : 'border-gray-200 bg-white text-muted-foreground hover:border-gray-300',
-                        )}>
-                        {mode}
-                      </button>
-                    ))}
-                  </div>
+                  <SegmentedControl
+                    options={['ONLINE', 'CASH', 'CHEQUE']}
+                    value={f.paymentMode}
+                    onChange={v => set('paymentMode', v)}
+                    className="max-w-xs"
+                  />
                 </div>
-
               </div>
             </SectionCard>
 
           </div>
 
-          {/* ═══ Summary Panel (sticky) ═══ */}
+          {/* Summary Panel (sticky) */}
           <div className="w-full xl:w-80 shrink-0">
-            <div className="sticky top-15.25 space-y-3">
+            <div className="sticky top-14 space-y-3">
 
-              {/* Estimate badge + Work type */}
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-4">
-                <div className="flex items-center justify-between mb-3">
+              {/* Estimate meta */}
+              <div className="bg-background rounded-xl border border-border px-5 py-4">
+                <div className="flex items-start justify-between gap-4">
                   <div>
-                    <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Estimate No.</p>
-                    <p className="text-sm font-bold text-indigo-600 font-mono mt-0.5">{estimateNo || '—'}</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Estimate</p>
+                    <p className="text-sm font-semibold font-mono text-primary mt-0.5">{estimateNo || '—'}</p>
                   </div>
-                  <div className="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 border border-emerald-100 px-2.5 py-1 rounded-full">
-                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                    <span className="text-[10px] font-bold">Live</span>
+                  <div className="text-right">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Work Type</p>
+                    <p className="text-xs font-medium text-foreground mt-0.5">{workType}</p>
                   </div>
-                </div>
-                <div className="rounded-lg bg-slate-50 border border-slate-100 px-3 py-2">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Work Type</p>
-                  <p className="text-xs font-bold text-slate-700 mt-0.5">{workType}</p>
                 </div>
               </div>
 
-              {/* Cost Breakdown */}
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-5 space-y-4">
+              {/* Cost breakdown */}
+              <div className="bg-background rounded-xl border border-border px-5 py-5 space-y-4">
 
-                {/* Sheets + Impressions stats */}
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="rounded-xl bg-amber-50 border border-amber-100 px-3 py-2.5 text-center">
-                    <p className="text-[9px] font-bold uppercase tracking-widest text-amber-600/70">Sheets</p>
-                    <p className="text-xl font-black text-amber-700 tabular-nums mt-0.5 leading-none">
+                {/* Sheets + Impressions */}
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-0.5">Sheets</p>
+                    <p className="text-2xl font-bold tabular-nums text-foreground leading-none">
                       {calc.totalSheets > 0 ? calc.totalSheets.toLocaleString() : '—'}
                     </p>
-                    {f.cut && <p className="text-[9px] text-emerald-600 font-bold mt-0.5">✂ cut</p>}
+                    {f.cut && <p className="text-[11px] text-muted-foreground mt-1">cut in half</p>}
                   </div>
-                  <div className="rounded-xl bg-violet-50 border border-violet-100 px-3 py-2.5 text-center">
-                    <p className="text-[9px] font-bold uppercase tracking-widest text-violet-600/70">Impressions</p>
-                    <p className="text-xl font-black text-violet-700 tabular-nums mt-0.5 leading-none">
+                  <div className="text-right">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-0.5">Impressions</p>
+                    <p className="text-2xl font-bold tabular-nums text-foreground leading-none">
                       {calc.impressions > 0 ? calc.impressions.toLocaleString() : '—'}
                     </p>
-                    {f.printType === 'Both Side' && <p className="text-[9px] text-violet-600 mt-0.5">Both Side</p>}
+                    {f.printType === 'Both Side' && <p className="text-[11px] text-muted-foreground mt-1">both sides</p>}
                   </div>
                 </div>
+
+                <Separator />
 
                 {/* Cost rows */}
                 <div className="space-y-2.5">
@@ -748,8 +731,8 @@ const NewEstimate = () => {
                 <Separator />
 
                 <div className="flex items-center justify-between">
-                  <p className="text-sm font-bold text-foreground">Production Cost</p>
-                  <p className="text-base font-bold tabular-nums">{formatCurrency(calc.productionCost)}</p>
+                  <p className="text-sm font-semibold text-foreground">Production Cost</p>
+                  <p className="text-sm font-semibold tabular-nums">{formatCurrency(calc.productionCost)}</p>
                 </div>
 
                 <Separator />
@@ -766,17 +749,17 @@ const NewEstimate = () => {
                   </div>
                 </div>
 
-                {/* Bill Amount hero */}
-                <div className="rounded-xl bg-linear-to-br from-indigo-600 to-indigo-700 px-4 py-4 text-center">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-indigo-300 mb-1">Bill Amount</p>
-                  <p className="text-3xl font-black text-white tabular-nums leading-none">
+                {/* Bill Amount */}
+                <div className="rounded-xl bg-primary px-4 py-4 text-center">
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-primary-foreground/70 mb-1">Bill Amount</p>
+                  <p className="text-3xl font-bold text-primary-foreground tabular-nums leading-none">
                     {formatCurrency(calc.billAmount)}
                   </p>
                 </div>
 
-                {/* Received / Balance Due */}
+                {/* Received / Balance */}
                 {(Number(f.recPayment) || 0) > 0 && (
-                  <div className="space-y-1.5 rounded-lg bg-gray-50 border border-gray-100 px-3 py-2.5">
+                  <div className="space-y-1.5 rounded-lg bg-muted/30 border border-border px-3 py-2.5">
                     <CostRow label="Received" value={formatCurrency(Number(f.recPayment) || 0)} />
                     <CostRow
                       label="Balance Due"
@@ -787,17 +770,17 @@ const NewEstimate = () => {
 
                 {/* Per-piece metrics */}
                 {(calc.paperCostPerSheet > 0 || perPiece > 0) && (
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="flex items-center justify-between text-xs pt-1">
                     {calc.paperCostPerSheet > 0 && (
-                      <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2.5 text-center">
-                        <p className="text-[9px] font-semibold uppercase tracking-wide text-gray-400">Paper/Sheet</p>
-                        <p className="text-sm font-bold tabular-nums mt-0.5">₹{calc.paperCostPerSheet.toFixed(2)}</p>
+                      <div>
+                        <p className="text-muted-foreground">Paper / sheet</p>
+                        <p className="font-semibold tabular-nums mt-0.5">₹{calc.paperCostPerSheet.toFixed(2)}</p>
                       </div>
                     )}
                     {perPiece > 0 && (
-                      <div className="rounded-lg bg-indigo-50 border border-indigo-100 px-3 py-2.5 text-center">
-                        <p className="text-[9px] font-semibold uppercase tracking-wide text-indigo-400">Cost/Piece</p>
-                        <p className="text-sm font-bold tabular-nums mt-0.5 text-indigo-700">₹{perPiece.toFixed(2)}</p>
+                      <div className="text-right">
+                        <p className="text-muted-foreground">Cost / piece</p>
+                        <p className="font-semibold tabular-nums mt-0.5">₹{perPiece.toFixed(2)}</p>
                       </div>
                     )}
                   </div>
@@ -808,7 +791,7 @@ const NewEstimate = () => {
               {/* Save CTA */}
               <Button
                 onClick={handleSave}
-                className="w-full gap-2 bg-indigo-600 hover:bg-indigo-700 text-white h-11"
+                className="w-full gap-2 h-11"
                 size="lg">
                 <Save className="w-4 h-4" />Save Estimate
               </Button>
@@ -819,19 +802,19 @@ const NewEstimate = () => {
         </div>
       </div>
 
-      {/* ── Mobile sticky footer ── */}
-      <div className="xl:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-sm border-t border-gray-100 shadow-lg">
+      {/* Mobile sticky footer */}
+      <div className="xl:hidden fixed bottom-0 left-0 right-0 z-40 bg-background/95 backdrop-blur-sm border-t border-border">
         <div className="flex items-center justify-between px-4 py-3">
           <div>
-            <p className="text-xs text-gray-400 font-medium">Bill Amount</p>
-            <p className="text-xl font-black text-indigo-600 tabular-nums leading-tight">{formatCurrency(calc.billAmount)}</p>
+            <p className="text-xs text-muted-foreground">Bill Amount</p>
+            <p className="text-xl font-bold text-primary tabular-nums leading-tight">{formatCurrency(calc.billAmount)}</p>
           </div>
           <div className="flex items-center gap-3">
             <div className="text-right">
-              <p className="text-[10px] text-gray-400">Sheets</p>
-              <p className="text-sm font-bold text-amber-600">{calc.totalSheets > 0 ? calc.totalSheets.toLocaleString() : '—'}</p>
+              <p className="text-[10px] text-muted-foreground">Sheets</p>
+              <p className="text-sm font-semibold tabular-nums">{calc.totalSheets > 0 ? calc.totalSheets.toLocaleString() : '—'}</p>
             </div>
-            <Button onClick={handleSave} className="gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white">
+            <Button onClick={handleSave} className="gap-1.5">
               <Save className="w-3.5 h-3.5" />Save
             </Button>
           </div>

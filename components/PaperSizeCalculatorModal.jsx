@@ -1,362 +1,282 @@
 'use client';
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { getRecommendationsFromDimensions, STANDARD_SIZES, DEFAULT_MARGINS } from '../utils/paperSizeOptimizer';
 import PaperLayoutVisualizer from './PaperLayoutVisualizer';
 
 const PRESETS = [
-  { label: '1/4 Size', w: 8.5, h: 11, unit: 'inch' },
+  { label: '1/4 Size', w: 8.5, h: 11,  unit: 'inch' },
   { label: '1/8 Size', w: 5.5, h: 8.5, unit: 'inch' },
 ];
 
-// Which smaller working sheets can be cut from a parent sheet, and how many
-// e.g. one 23×36 sheet cut in half along the 36" side → 2× 18×23
-const CUT_SOURCES = {
-  '18x23': { parent: '23x36', qty: 2, note: 'cut 23×36 in half' },
-  '18x25': { parent: '25x36', qty: 2, note: 'cut 25×36 in half' },
-  '15x30': { parent: '20x30', qty: 2, note: 'cut 20×30 in half' },
-  '17x24': { parent: '23x36', qty: 1, note: 'trim from 23×36' },
-};
+const STANDARD_PRESS_SHEET = '18x23';
 
 export function PaperSizeCalculatorModal({ open, onClose, onApply, calcMargins = DEFAULT_MARGINS }) {
-  const [calcWidth, setCalcWidth] = useState('');
-  const [calcHeight, setCalcHeight] = useState('');
-  const [calcUnit, setCalcUnit] = useState('inch');
+  const [calcWidth, setCalcWidth]     = useState('');
+  const [calcHeight, setCalcHeight]   = useState('');
+  const [calcUnit, setCalcUnit]       = useState('inch');
   const [calcResults, setCalcResults] = useState(null);
-  const [selectedCalcRec, setSelectedCalcRec] = useState(null);
-  const [willCut, setWillCut] = useState(false);
+  const [selectedRec, setSelectedRec] = useState(null);
+  const [willCut, setWillCut]         = useState(false);
 
   const handleClose = () => {
     setCalcResults(null);
-    setSelectedCalcRec(null);
+    setSelectedRec(null);
     onClose();
   };
 
-  const handleCalculate = () => {
+  const runCalc = (cut) => {
     const w = parseFloat(calcWidth);
     const h = parseFloat(calcHeight);
     if (!w || !h || w <= 0 || h <= 0) return;
-    const result = getRecommendationsFromDimensions(w, h, calcUnit, calcMargins);
+    const result = getRecommendationsFromDimensions(w, h, calcUnit, calcMargins, cut);
     setCalcResults(result);
-    // auto-select best rec based on cut mode
-    const recs = result.recommendations ?? [];
-    const sorted = willCut
-      ? [...recs].sort((a, b) => {
-          const sa = STANDARD_SIZES.find(s => s.name === a.size);
-          const sb = STANDARD_SIZES.find(s => s.name === b.size);
-          return (sa?.width ?? 0) * (sa?.height ?? 0) - (sb?.width ?? 0) * (sb?.height ?? 0);
-        })
-      : recs;
-    setSelectedCalcRec(sorted[0] ?? null);
+    setSelectedRec(result.recommendations?.[0] ?? null);
   };
 
-  // Sorted display list — cut mode prefers smallest fitting sheet
-  const displayRecs = useMemo(() => {
-    const recs = calcResults?.recommendations ?? [];
-    if (!willCut) return recs;
-    return [...recs].sort((a, b) => {
-      const sa = STANDARD_SIZES.find(s => s.name === a.size);
-      const sb = STANDARD_SIZES.find(s => s.name === b.size);
-      return (sa?.width ?? 0) * (sa?.height ?? 0) - (sb?.width ?? 0) * (sb?.height ?? 0);
-    });
-  }, [calcResults, willCut]);
+  const handleCalculate = () => runCalc(willCut);
 
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter') handleCalculate();
+  const handleToggleCut = () => {
+    const next = !willCut;
+    setWillCut(next);
+    if (calcWidth && calcHeight) runCalc(next);
   };
+
+  const handleKeyDown = (e) => { if (e.key === 'Enter') handleCalculate(); };
 
   const handleApply = () => {
-    if (!selectedCalcRec) return;
-    onApply(selectedCalcRec.size, selectedCalcRec.ups, calcWidth, calcHeight, calcUnit, calcResults, selectedCalcRec);
+    if (!selectedRec) return;
+    onApply(selectedRec.size, selectedRec.ups, calcWidth, calcHeight, calcUnit, calcResults, selectedRec);
     handleClose();
   };
 
-  const sheet = selectedCalcRec
-    ? STANDARD_SIZES.find((s) => s.name === selectedCalcRec.size)
-    : null;
+  const previewSheet = selectedRec ? STANDARD_SIZES.find(s => s.name === selectedRec.size) : null;
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) handleClose(); }}>
-      <DialogContent className="p-0 rounded-2xl sm:rounded-2xl border border-gray-100 max-w-[min(92vw,860px)] gap-0 font-manrope overflow-hidden">
+      <DialogContent className="p-0 rounded-2xl border border-border max-w-[min(92vw,880px)] gap-0 overflow-hidden">
 
-        {/* ── Header ── */}
-        <div className="px-5 pt-5 pb-4 border-b border-gray-100">
-          <p className="text-base font-bold text-foreground">Paper Size Calculator</p>
+        {/* Header */}
+        <div className="px-6 pt-5 pb-4 border-b border-border">
+          <p className="text-[15px] font-semibold tracking-tight text-foreground">Paper Size Calculator</p>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Enter finished size to find the optimal press sheet with minimum waste
+            Enter the finished print size to find the most efficient press sheet.
           </p>
         </div>
 
-        {/* ── Scrollable body ── */}
-        <div className="px-5 py-4 space-y-3 overflow-y-auto max-h-[70vh]">
+        {/* Body */}
+        <div className="px-6 py-5 space-y-6 overflow-y-auto max-h-[72vh]">
 
-          {/* Quick Presets */}
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground shrink-0">Presets:</span>
+          {/* Press feeding method */}
+          <div className="space-y-2.5">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
+              Press feeding method
+            </p>
+            <div className="flex rounded-lg border border-border overflow-hidden">
+              <button
+                type="button"
+                onClick={() => { if (willCut) handleToggleCut(); }}
+                className={[
+                  'flex-1 px-4 py-2.5 text-sm font-medium text-center transition-colors duration-150',
+                  !willCut
+                    ? 'bg-primary text-white'
+                    : 'bg-background text-muted-foreground hover:text-foreground hover:bg-muted/50',
+                ].join(' ')}
+              >
+                Direct — Full Sheet
+              </button>
+              <div className="w-px bg-border shrink-0" />
+              <button
+                type="button"
+                onClick={() => { if (!willCut) handleToggleCut(); }}
+                className={[
+                  'flex-1 px-4 py-2.5 text-sm font-medium text-center transition-colors duration-150',
+                  willCut
+                    ? 'bg-primary text-white'
+                    : 'bg-background text-muted-foreground hover:text-foreground hover:bg-muted/50',
+                ].join(' ')}
+              >
+                Buy &amp; Cut in Half
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              {willCut
+                ? 'Buy a larger parent sheet (23×36 or 25×36) and cut it in half before printing. Lower cost per kg when the finished size fits a half sheet.'
+                : 'Print directly on the full press sheet (e.g. 25×36). Best for multi-up jobs where you print many copies then cut.'}
+            </p>
+          </div>
+
+          {/* Finished print size */}
+          <div className="space-y-3">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
+              Finished print size
+            </p>
+
             <div className="flex flex-wrap gap-2">
-              {PRESETS.map((preset) => (
+              {PRESETS.map((p) => (
                 <button
-                  key={preset.label}
+                  key={p.label}
                   type="button"
-                  onClick={() => {
-                    setCalcWidth(String(preset.w));
-                    setCalcHeight(String(preset.h));
-                    setCalcUnit(preset.unit);
-                  }}
-                  className="px-3 py-1.5 text-sm font-semibold text-muted-foreground rounded-md hover:bg-gray-100 hover:text-foreground border border-border transition-colors"
+                  onClick={() => { setCalcWidth(String(p.w)); setCalcHeight(String(p.h)); setCalcUnit(p.unit); }}
+                  className="px-3 py-1.5 text-xs font-medium rounded-md border border-border bg-background hover:bg-muted/50 transition-colors duration-150"
                 >
-                  {preset.label}
-                  <span className="ml-2 font-normal opacity-60">
-                    ({preset.w} × {preset.h} {preset.unit})
+                  {p.label}
+                  <span className="ml-1.5 text-muted-foreground font-normal">
+                    {p.w}×{p.h} {p.unit}
                   </span>
                 </button>
               ))}
             </div>
-          </div>
 
-          {/* Will you cut the paper? */}
-          <div className="flex items-center justify-between rounded-xl border-2 px-4 py-3 transition-colors"
-            style={{ borderColor: willCut ? '#8b5cf6' : '#e5e7eb', background: willCut ? '#f5f3ff' : '#f9fafb' }}>
-            <div>
-              <p className="text-sm font-bold text-foreground">Will you cut the paper before printing?</p>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {willCut
-                  ? 'Recommending the smallest sheet that fits — cut from a parent sheet (cheaper per job).'
-                  : 'Recommending the most efficient full press sheet (best for N-up print → cut workflow).'}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                const next = !willCut;
-                setWillCut(next);
-                if (calcResults) {
-                  const recs = calcResults.recommendations ?? [];
-                  const sorted = next
-                    ? [...recs].sort((a, b) => {
-                        const sa = STANDARD_SIZES.find(s => s.name === a.size);
-                        const sb = STANDARD_SIZES.find(s => s.name === b.size);
-                        return (sa?.width ?? 0) * (sa?.height ?? 0) - (sb?.width ?? 0) * (sb?.height ?? 0);
-                      })
-                    : recs;
-                  setSelectedCalcRec(sorted[0] ?? null);
-                }
-              }}
-              className={[
-                'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ml-4',
-                willCut ? 'bg-violet-500' : 'bg-gray-200',
-              ].join(' ')}
-            >
-              <span className={[
-                'pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200',
-                willCut ? 'translate-x-5' : 'translate-x-0',
-              ].join(' ')} />
-            </button>
-          </div>
-
-          {/* Input row */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 items-end">
-            <div className="space-y-1.5">
-              <label className="text-sm font-semibold text-foreground">Width</label>
-              <input
-                type="number"
-                value={calcWidth}
-                onChange={(e) => setCalcWidth(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder={calcUnit === 'inch' ? '5.5' : calcUnit === 'cm' ? '14' : '140'}
-                min="0"
-                step="0.1"
-                className="w-full px-4 py-2.5 rounded-md border border-border bg-white text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-sm font-semibold text-foreground">Height</label>
-              <input
-                type="number"
-                value={calcHeight}
-                onChange={(e) => setCalcHeight(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder={calcUnit === 'inch' ? '8.5' : calcUnit === 'cm' ? '21' : '210'}
-                min="0"
-                step="0.1"
-                className="w-full px-4 py-2.5 rounded-md border border-border bg-white text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-sm font-semibold text-foreground">Unit</label>
-              <Select value={calcUnit} onValueChange={setCalcUnit}>
-                <SelectTrigger className="w-full h-10.5 rounded-md border-border focus:ring-2 focus:ring-primary/30">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="inch">Inch</SelectItem>
-                  <SelectItem value="mm">mm</SelectItem>
-                  <SelectItem value="cm">cm</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              {/* invisible label to align button with inputs */}
-              <label className="text-sm font-semibold text-foreground opacity-0 select-none" aria-hidden="true">Find</label>
-              <button
-                type="button"
-                onClick={handleCalculate}
-                className="w-full px-5 py-2.5 bg-primary text-white text-sm font-semibold rounded-md hover:bg-[hsl(202,60%,38%)] transition-colors"
-              >
-                Find Best Size
-              </button>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 items-end">
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">Width</label>
+                <input
+                  type="number" value={calcWidth}
+                  onChange={(e) => setCalcWidth(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder={calcUnit === 'inch' ? '8.5' : calcUnit === 'cm' ? '21' : '210'}
+                  min="0" step="0.1"
+                  className="w-full px-3 py-2.5 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors duration-150"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">Height</label>
+                <input
+                  type="number" value={calcHeight}
+                  onChange={(e) => setCalcHeight(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder={calcUnit === 'inch' ? '11' : calcUnit === 'cm' ? '29.7' : '297'}
+                  min="0" step="0.1"
+                  className="w-full px-3 py-2.5 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors duration-150"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">Unit</label>
+                <Select value={calcUnit} onValueChange={setCalcUnit}>
+                  <SelectTrigger className="w-full rounded-lg border-border focus:ring-2 focus:ring-primary/30">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="inch">Inch</SelectItem>
+                    <SelectItem value="mm">mm</SelectItem>
+                    <SelectItem value="cm">cm</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground opacity-0 select-none" aria-hidden="true">—</label>
+                <button
+                  type="button" onClick={handleCalculate}
+                  className="w-full px-4 py-2.5 bg-primary text-white text-sm font-semibold rounded-lg hover:bg-primary/90 transition-colors duration-150"
+                >
+                  Find Best Size
+                </button>
+              </div>
             </div>
           </div>
 
-          {/* Customer size info bar */}
-          {calcResults?.customerSize && (
-            <div className="bg-gray-50 border border-gray-100 rounded-xl px-4 py-2 flex flex-wrap items-center gap-2">
-              <span className="text-sm text-muted-foreground">Finished size:</span>
-              <span className="text-sm font-semibold text-foreground">
+          {/* Resolved print size */}
+          {calcResults?.customerSize && !calcResults.error && (
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm py-2 border-t border-border">
+              <span className="text-muted-foreground text-xs">Resolved size:</span>
+              <span className="font-semibold text-foreground tabular-nums text-xs">
                 {calcResults.customerSize.width} × {calcResults.customerSize.height} mm
               </span>
-              <span className="text-sm text-muted-foreground">{calcResults.customerSize.inInches}</span>
+              <span className="text-muted-foreground text-xs opacity-70">({calcResults.customerSize.inInches})</span>
             </div>
           )}
 
-          {/* Results: recommendation cards + visualizer */}
+          {/* Results */}
           {calcResults?.recommendations && (
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+            <div className="space-y-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
+                {willCut ? 'Best parent sheets to buy and cut' : 'Best matching press sheets'}
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
 
-              {/* Recommendation cards */}
-              <div className="md:col-span-3 space-y-2">
-                <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                  Recommendations — click to preview:
-                </p>
-                {displayRecs.map((rec, i) => {
-                  const cutSrc = willCut ? CUT_SOURCES[rec.size] : null;
-                  return (
-                  <div
-                    key={rec.size}
-                    onClick={() => setSelectedCalcRec(rec)}
-                    className={[
-                      'bg-white border rounded-xl p-3 cursor-pointer transition-colors',
-                      selectedCalcRec?.size === rec.size
-                        ? 'border-primary/40 ring-1 ring-primary/10 bg-primary/5'
-                        : i === 0
-                          ? 'border-primary/40 ring-1 ring-primary/10'
-                          : 'border-gray-100 hover:border-primary/30',
-                    ].join(' ')}
-                  >
-                    {/* Card header row */}
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {i === 0 && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold bg-emerald-50 text-emerald-600">
-                            {willCut ? 'Best (Cut)' : 'Best'}
-                          </span>
-                        )}
-                        {selectedCalcRec?.size === rec.size && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold bg-primary/10 text-primary">
-                            Selected
-                          </span>
-                        )}
-                        {cutSrc && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold bg-violet-50 text-violet-600">
-                            ✂ from {cutSrc.parent} ×{cutSrc.qty}
-                          </span>
-                        )}
-                        <p className="text-sm font-semibold text-foreground">{rec.size}</p>
-                        {rec.layout && (
-                          <p className="text-xs text-muted-foreground">
-                            {rec.layout.orientation} · {rec.layout.cols}×{rec.layout.rows}
-                          </p>
-                        )}
-                      </div>
-                      {/* Inline stats */}
-                      <div className="flex items-center gap-3 shrink-0">
-                        <div className="text-right">
-                          <p className="text-xs text-muted-foreground">UPS</p>
-                          <p className="text-sm font-bold text-foreground">{rec.ups}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-xs text-muted-foreground">Eff.</p>
-                          <p className="text-sm font-bold text-emerald-600">{rec.efficiency}%</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-xs text-muted-foreground">Waste</p>
-                          <p className="text-sm font-bold text-amber-600">{rec.wastePercent}%</p>
-                        </div>
-                      </div>
+                <div className="md:col-span-3 space-y-2">
+                  {calcResults.recommendations.map((rec, i) => (
+                    <RecCard
+                      key={rec.size}
+                      rec={rec}
+                      index={i}
+                      isSelected={selectedRec?.size === rec.size}
+                      willCut={willCut}
+                      onClick={() => setSelectedRec(rec)}
+                    />
+                  ))}
+                </div>
+
+                <div className="md:col-span-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-muted-foreground mb-2">Layout Preview</p>
+                  {selectedRec && previewSheet ? (
+                    <PaperLayoutVisualizer
+                      sheetWidth={previewSheet.width}
+                      sheetHeight={previewSheet.height}
+                      gridLayout={selectedRec.gridLayout}
+                      itemWidth={selectedRec.layout?.itemWidth || 0}
+                      itemHeight={selectedRec.layout?.itemHeight || 0}
+                      ups={selectedRec.ups}
+                      wastePercent={selectedRec.wastePercent}
+                    />
+                  ) : (
+                    <div className="border border-dashed border-border rounded-xl flex items-center justify-center min-h-32 bg-muted/20">
+                      <p className="text-xs text-muted-foreground text-center px-4">
+                        Select a size to preview layout
+                      </p>
                     </div>
-                    {/* Dimensions + cut hint */}
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {rec.dimensions}{rec.dimensionsInch ? ` · ${rec.dimensionsInch}` : ''}
-                      {cutSrc && <span className="ml-2 text-violet-600">{cutSrc.note}</span>}
-                    </p>
-                  </div>
-                  );
-                })}
-              </div>
-
-              {/* Visualizer */}
-              <div className="md:col-span-2">
-                <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-2">Layout Preview:</p>
-                {selectedCalcRec && sheet ? (
-                  <PaperLayoutVisualizer
-                    sheetWidth={sheet.width}
-                    sheetHeight={sheet.height}
-                    gridLayout={selectedCalcRec.gridLayout}
-                    itemWidth={selectedCalcRec.layout?.itemWidth || 0}
-                    itemHeight={selectedCalcRec.layout?.itemHeight || 0}
-                    ups={selectedCalcRec.ups}
-                    wastePercent={selectedCalcRec.wastePercent}
-                  />
-                ) : (
-                  <div className="bg-gray-50 border border-gray-100 rounded-xl p-4 flex flex-col items-center justify-center h-full min-h-24 gap-2">
-                    <p className="text-xs text-muted-foreground text-center">Select a recommendation to preview</p>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             </div>
           )}
 
-          {/* Error / no-result state */}
+          {/* Error state */}
           {calcResults?.error && (
-            <div className="bg-amber-50 border border-amber-100 rounded-xl p-4">
+            <div className="border border-amber-200 rounded-xl px-4 py-3 bg-amber-50/60">
               <p className="text-sm text-amber-700">{calcResults.error}</p>
             </div>
           )}
         </div>
 
-        {/* ── Footer ── */}
-        <div className="px-5 py-3 border-t border-gray-100 flex flex-wrap items-center justify-between gap-3">
-          <div className="text-sm text-muted-foreground min-w-0">
-            {selectedCalcRec ? (
+        {/* Footer */}
+        <div className="px-6 py-3.5 border-t border-border bg-muted/20 flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            {selectedRec ? (
               <>
-                Selected:{' '}
-                <span className="font-semibold text-foreground">{selectedCalcRec.size}</span>
-                {' · '}
-                {selectedCalcRec.ups} up{selectedCalcRec.ups !== 1 ? 's' : ''}
-                {' · '}
-                <span className="text-amber-600 font-semibold">{selectedCalcRec.wastePercent}% waste</span>
-                {' · '}
-                <span className="text-emerald-600 font-semibold">{selectedCalcRec.efficiency}% eff.</span>
-                <span className="block text-xs text-muted-foreground mt-0.5">Applies sheet size, ups &amp; wastage to the estimate</span>
+                <p className="text-sm font-medium text-foreground leading-snug tabular-nums">
+                  {selectedRec.isCut
+                    ? <>{selectedRec.parentSheet} <span className="text-muted-foreground font-normal">→ cut →</span> {selectedRec.cuts}× {selectedRec.size}</>
+                    : selectedRec.size
+                  }
+                  <span className="text-muted-foreground mx-1.5">·</span>
+                  <span className="font-semibold">{selectedRec.ups} ups</span>
+                  {selectedRec.isCut && (
+                    <><span className="text-muted-foreground mx-1.5">·</span><span>{selectedRec.effectiveUps} total/sheet</span></>
+                  )}
+                  <span className="text-muted-foreground mx-1.5">·</span>
+                  <span className="text-emerald-600">{selectedRec.efficiency}% eff.</span>
+                  <span className="text-muted-foreground mx-1.5">·</span>
+                  <span className="text-amber-600">{selectedRec.wastePercent}% waste</span>
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">Applies sheet size, ups and wastage to the estimate</p>
               </>
             ) : (
-              <span>Enter a size and click &quot;Find Best Size&quot; to get recommendations</span>
+              <p className="text-sm text-muted-foreground">Enter a size above and click &quot;Find Best Size&quot;</p>
             )}
           </div>
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-2 shrink-0">
             <button
-              type="button"
-              onClick={handleClose}
-              className="px-5 py-2.5 bg-white text-foreground text-sm font-semibold rounded-md border border-border hover:bg-muted/50 transition-colors"
+              type="button" onClick={handleClose}
+              className="px-4 py-2 bg-background text-foreground text-sm font-medium rounded-lg border border-border hover:bg-muted/50 transition-colors duration-150"
             >
               Cancel
             </button>
             <button
-              type="button"
-              onClick={handleApply}
-              disabled={!selectedCalcRec}
-              className="px-5 py-2.5 bg-primary text-white text-sm font-semibold rounded-md hover:bg-[hsl(202,60%,38%)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              type="button" onClick={handleApply} disabled={!selectedRec}
+              className="px-5 py-2 bg-primary text-white text-sm font-semibold rounded-lg hover:bg-primary/90 transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Apply Selected Size
             </button>
@@ -365,5 +285,90 @@ export function PaperSizeCalculatorModal({ open, onClose, onApply, calcMargins =
 
       </DialogContent>
     </Dialog>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/*  Recommendation card                                                        */
+/* ─────────────────────────────────────────────────────────────────────────── */
+function RecCard({ rec, index, isSelected, willCut, onClick }) {
+  const base = 'rounded-xl border px-4 py-3.5 cursor-pointer transition-all duration-150';
+  const style = isSelected
+    ? `${base} border-primary bg-primary/[0.04] ring-1 ring-primary/20`
+    : index === 0
+      ? `${base} border-emerald-200 bg-emerald-50/30 hover:border-emerald-300`
+      : `${base} border-border bg-background hover:border-primary/40 hover:bg-muted/30`;
+
+  return (
+    <div className={style} onClick={onClick}>
+
+      {/* Title row */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          {willCut ? (
+            <p className="text-sm font-semibold text-foreground leading-snug">
+              {rec.parentSheet}
+              <span className="mx-1.5 text-muted-foreground font-normal text-xs">→ cut →</span>
+              {rec.cuts}× {rec.size}
+            </p>
+          ) : (
+            <p className="text-sm font-semibold text-foreground">{rec.size}</p>
+          )}
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {rec.dimensions}
+            {rec.dimensionsInch && <span className="ml-1 opacity-60">· {rec.dimensionsInch}</span>}
+            {!willCut && rec.layout && (
+              <span className="ml-1 opacity-60">· {rec.layout.orientation} · {rec.layout.cols}×{rec.layout.rows}</span>
+            )}
+          </p>
+        </div>
+
+        {/* Badges */}
+        <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end pt-0.5">
+          {index === 0 && (
+            <span className="px-2 py-0.5 rounded-md text-xs font-semibold bg-emerald-100 text-emerald-700">
+              Best match
+            </span>
+          )}
+          {rec.size === STANDARD_PRESS_SHEET && (
+            <span className="px-2 py-0.5 rounded-md text-xs font-medium bg-muted text-muted-foreground">
+              Your standard
+            </span>
+          )}
+          {isSelected && (
+            <span className="px-2 py-0.5 rounded-md text-xs font-semibold bg-primary/10 text-primary">
+              Selected
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Stats row */}
+      <div className="flex items-center gap-3 mt-3 text-xs flex-wrap">
+        {willCut ? (
+          <>
+            <span className="text-muted-foreground">
+              Per half: <span className="font-semibold text-foreground tabular-nums">{rec.ups} ups</span>
+            </span>
+            <span className="text-border">|</span>
+            <span className="text-muted-foreground">
+              Per sheet: <span className="font-semibold text-foreground tabular-nums">{rec.effectiveUps} ups</span>
+            </span>
+            <span className="text-border">|</span>
+            <span className="font-semibold tabular-nums text-emerald-600">{rec.efficiency}% eff.</span>
+            <span className="text-border">|</span>
+            <span className="font-semibold tabular-nums text-amber-600">{rec.wastePercent}% waste</span>
+          </>
+        ) : (
+          <>
+            <span className="font-semibold text-foreground tabular-nums">{rec.ups} ups</span>
+            <span className="text-border">|</span>
+            <span className="font-semibold tabular-nums text-emerald-600">{rec.efficiency}% eff.</span>
+            <span className="text-border">|</span>
+            <span className="font-semibold tabular-nums text-amber-600">{rec.wastePercent}% waste</span>
+          </>
+        )}
+      </div>
+    </div>
   );
 }
